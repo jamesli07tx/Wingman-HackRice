@@ -39,7 +39,7 @@ targets:
         product: MWDATMockDevice
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.hackrice.wingman
+        PRODUCT_BUNDLE_IDENTIFIER: $(WINGMAN_BUNDLE_ID)   # from Config.xcconfig / Config.local.xcconfig (App IDs are global across Apple teams)
         PRODUCT_NAME: Wingman
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Wingman/Info.plist

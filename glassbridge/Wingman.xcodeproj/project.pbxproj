@@ -66,7 +66,7 @@
 		E21C50607EFEF51382155EA3 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		F2FE628C0697A064C96F62AF /* Wingman.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Wingman.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeController.swift; sourceTree = "<group>"; };
-		"TEMP_9F456F1C-7CC3-4CF3-AEFB-E70B557F7FDF" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		"TEMP_B018F3B6-C8F1-4D88-9209-DC541F72E407" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -136,10 +136,10 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		"TEMP_4DCDC3D0-05E1-42FD-9988-150889AF41A6" /* glassbridge */ = {
+		"TEMP_85A67E92-D122-4FE0-A9D7-00F84989C4B1" /* glassbridge */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_9F456F1C-7CC3-4CF3-AEFB-E70B557F7FDF" /* Config.xcconfig */,
+				"TEMP_B018F3B6-C8F1-4D88-9209-DC541F72E407" /* Config.xcconfig */,
 			);
 			path = glassbridge;
 			sourceTree = "<group>";
@@ -287,7 +287,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.hackrice.wingman;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(WINGMAN_BUNDLE_ID)";
 				PRODUCT_NAME = Wingman;
 				SDKROOT = iphoneos;
 				SWIFT_STRICT_CONCURRENCY = minimal;
@@ -307,7 +307,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.hackrice.wingman;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(WINGMAN_BUNDLE_ID)";
 				PRODUCT_NAME = Wingman;
 				SDKROOT = iphoneos;
 				SWIFT_STRICT_CONCURRENCY = minimal;
@@ -334,7 +334,7 @@
 		};
 		9D6513D9C82CCE7BD3D4DAB1 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_9F456F1C-7CC3-4CF3-AEFB-E70B557F7FDF" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_B018F3B6-C8F1-4D88-9209-DC541F72E407" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -399,7 +399,7 @@
 		};
 		DABFDCF87C106D2CAF6C5A18 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_9F456F1C-7CC3-4CF3-AEFB-E70B557F7FDF" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_B018F3B6-C8F1-4D88-9209-DC541F72E407" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;

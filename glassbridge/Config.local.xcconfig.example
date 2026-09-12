@@ -4,5 +4,6 @@ CORTEX_URL = https:/$()/wingman-cortex.fly.dev
 CORTEX_WS_URL = wss:/$()/wingman-cortex.fly.dev/ws/device
 DEV_HARNESS_URL = ws:/$()/192.168.1.23:8787/ws/device
 DEVELOPMENT_TEAM = ABCDE12345
+WINGMAN_BUNDLE_ID = com.hackrice.wingman.ab
 META_APP_ID = 0
 META_CLIENT_TOKEN =
