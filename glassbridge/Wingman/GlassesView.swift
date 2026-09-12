@@ -66,9 +66,8 @@ struct GlassesView: View {
           Button("Register with Meta AI") { Task { await dat.register() } }
             .buttonStyle(PrimaryButtonStyle())
         } else if dat.isConnected {
-          Button("Disconnect") { bridge.disconnectGlasses() }
+          Button(bridge.armed ? "Stop & disconnect" : "Disconnect") { bridge.disconnectGlasses() }
             .buttonStyle(GhostButtonStyle())
-            .disabled(bridge.armed)
         } else {
           Button {
             Task { await bridge.connectGlasses() }
@@ -80,6 +79,9 @@ struct GlassesView: View {
           }
           .buttonStyle(PrimaryButtonStyle())
           .disabled(bridge.glassesConnecting)
+          if bridge.glassesConnecting || bridge.reconnecting {
+            Button("Cancel") { bridge.disconnectGlasses() }.buttonStyle(GhostButtonStyle())
+          }
         }
 
         // The hotspot join can leave iOS in a state where every Connect fails until the entry is

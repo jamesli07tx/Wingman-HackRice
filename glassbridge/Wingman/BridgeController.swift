@@ -439,8 +439,13 @@ final class BridgeController: ObservableObject {
     await forceReconnect(reason: "manual")
   }
 
+  /// Always allowed: stops an armed session first and cancels any connect/reconnect in flight (a hanging
+  /// hotspot join otherwise greys the button out for up to 3 × 30 s).
   func disconnectGlasses() {
-    guard !armed else { lastError = "Stop the session first"; return }
+    if armed { stop() }
+    armTask?.cancel(); armTask = nil
+    glassesConnecting = false
+    reconnecting = false
     watchdogTask?.cancel(); watchdogTask = nil
     reconnectAttempt = 0
     reconnectStatus = nil
