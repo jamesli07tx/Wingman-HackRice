@@ -34,36 +34,25 @@ enum SilentWav {
 
 #if os(iOS)
 import AVFoundation
+import UIKit
 
 final class AudioKeepalive {
   private(set) var isRunning = false
   private var player: AVAudioPlayer?
-  private var interruptionObserver: NSObjectProtocol?
+  private var observers: [NSObjectProtocol] = []
+  /// Set on interruption .began; some interruptions never deliver .ended, so foregrounding also clears it.
+  private var interrupted = false
 
   func start() {
     guard !isRunning else { return }
     do {
-      let session = AVAudioSession.sharedInstance()
-      try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-      try session.setActive(true)
-      let p = try AVAudioPlayer(contentsOf: SilentWav.url())
-      p.numberOfLoops = -1
-      p.volume = 1.0            // the file itself is silent; volume 0 can get the session deprioritized
-      p.prepareToPlay()
-      p.play()
-      player = p
+      try makePlayer()
       isRunning = true
-      // Phone call / Siri pauses us silently otherwise — restart when the interruption ends.
-      interruptionObserver = NotificationCenter.default.addObserver(
-        forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
-          guard let self, self.isRunning else { return }
-          let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-          guard raw.flatMap(AVAudioSession.InterruptionType.init) == .ended else { return }
-          try? AVAudioSession.sharedInstance().setActive(true)
-          self.player?.play()
-        }
+      observe()
       NSLog("AudioKeepalive: started")
     } catch {
+      // setActive(true) may already have succeeded before the player threw — don't leave the session held.
+      try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
       NSLog("AudioKeepalive: start failed: \(error)")
     }
   }
@@ -71,11 +60,55 @@ final class AudioKeepalive {
   func stop() {
     guard isRunning else { return }
     isRunning = false
+    interrupted = false
     player?.stop(); player = nil
-    if let o = interruptionObserver { NotificationCenter.default.removeObserver(o) }
-    interruptionObserver = nil
+    observers.forEach { NotificationCenter.default.removeObserver($0) }
+    observers.removeAll()
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     NSLog("AudioKeepalive: stopped")
+  }
+
+  /// Category + active session + a fresh looping player. Used by start() and by media-reset recovery,
+  /// which invalidates every previously created AVAudioSession/AVAudioPlayer object.
+  private func makePlayer() throws {
+    let session = AVAudioSession.sharedInstance()
+    try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+    try session.setActive(true)
+    let p = try AVAudioPlayer(contentsOf: SilentWav.url())
+    p.numberOfLoops = -1
+    p.volume = 1.0            // the file itself is silent; volume 0 can get the session deprioritized
+    p.prepareToPlay()
+    p.play()
+    player = p
+  }
+
+  private func resume() {
+    interrupted = false
+    try? AVAudioSession.sharedInstance().setActive(true)
+    player?.play()
+  }
+
+  private func observe() {
+    let nc = NotificationCenter.default
+    // Phone call / Siri pauses us silently otherwise — restart when the interruption ends.
+    observers.append(nc.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
+      guard let self, self.isRunning else { return }
+      let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+      let type = raw.flatMap(AVAudioSession.InterruptionType.init)
+      if type == .began { self.interrupted = true } else if type == .ended { self.resume() }
+    })
+    // Media services reset invalidates the player permanently while isRunning stays true — rebuild from scratch.
+    observers.append(nc.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
+      guard let self, self.isRunning else { return }
+      self.player?.stop(); self.player = nil
+      do { try self.makePlayer(); NSLog("AudioKeepalive: rebuilt after media services reset") }
+      catch { NSLog("AudioKeepalive: media-services rebuild failed: \(error)") }
+    })
+    // Safety net for an interruption whose .ended never arrives (another app kept the session).
+    observers.append(nc.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+      guard let self, self.isRunning, self.interrupted else { return }
+      self.resume()
+    })
   }
 }
 #endif

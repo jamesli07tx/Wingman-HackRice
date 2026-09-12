@@ -11,6 +11,7 @@
 
 #if canImport(MWDATCore)
 import Foundation
+import Combine
 import CoreGraphics
 import CoreImage
 import CoreMedia
@@ -33,16 +34,23 @@ final class DATSessionManager: ObservableObject {
   @Published private(set) var lastError: String?
   @Published private(set) var frameCount = 0
 
-  var onFrame: ((CGImage) -> Void)?
-  var onPhoto: ((Data) -> Void)?
-  var onPhotoError: ((String) -> Void)?
+  // The three callbacks are invoked OFF the main actor, straight from the DAT listener thread, so they are
+  // `@Sendable` and are snapshotted into locals at start() time — the listener closures never touch `self`.
+  // CONSEQUENCE: assign them BEFORE calling start(); assignments made after start() are not picked up until
+  // the next start(). (BridgeController assigns them in its init, so this is satisfied.)
+  var onFrame: (@Sendable (CGImage) -> Void)?
+  var onPhoto: (@Sendable (Data) -> Void)?
+  var onPhotoError: (@Sendable (String) -> Void)?
   private(set) var display: Display?
 
   private let wearables = Wearables.shared
   private let selector: AutoDeviceSelector
   private var session: DeviceSession?
   private var camera: Camera?
-  private let bag = ListenerTokenBag()
+  /// Wearables-level listeners (registration, devices) — live as long as this object.
+  private let lifetimeBag = ListenerTokenBag()
+  /// Session/stream/display listeners — cleared on every stop().
+  private let sessionBag = ListenerTokenBag()
 
   static var isHardwareAvailable: Bool {
     #if targetEnvironment(simulator)
@@ -56,10 +64,10 @@ final class DATSessionManager: ObservableObject {
     // Build the selector EARLY so devicesStream has populated it before Start (api-notes §3 gotcha).
     selector = AutoDeviceSelector(wearables: wearables, filter: { $0.supportsDisplay() })
     registration = wearables.registrationState
-    wearables.addRegistrationStateListener { [weak self] s in Task { @MainActor in self?.registration = s } }.store(in: bag)
+    wearables.addRegistrationStateListener { [weak self] s in Task { @MainActor in self?.registration = s } }.store(in: lifetimeBag)
     wearables.addDevicesListener { [weak self] ids in
       Task { @MainActor in self?.deviceName = ids.first.flatMap { self?.wearables.deviceForIdentifier($0)?.nameOrId() } }
-    }.store(in: bag)
+    }.store(in: lifetimeBag)
   }
 
   // MARK: registration (Meta AI round-trip, api-notes §2)
@@ -76,46 +84,67 @@ final class DATSessionManager: ObservableObject {
 
   // MARK: session lifecycle — attach order per api-notes §6 "Correct attach order"
 
+  /// All-or-nothing: any failure after the session is created tears the whole session back down before throwing.
   func start() async throws {
     stop()
     lastError = nil
     let s = try wearables.createSession(deviceSelector: selector)
     session = s
-    Task { for await st in s.stateStream() { await MainActor.run { self.sessionState = st } } }
-    Task { for await e in s.errorStream() { await MainActor.run { self.lastError = "Session error: \(e)" } } }
-    try s.start()
-    for await st in s.stateStream() where st == .started || st == .stopped { if st == .stopped { throw DATError.sessionStopped }; break }
+    // Mirror session state/errors through the multicast publishers, subscribed BEFORE start() (api-notes §6 step 3).
+    s.statePublisher.listen { [weak self] st in Task { @MainActor in self?.sessionState = st } }.store(in: sessionBag)
+    s.errorPublisher.listen { [weak self] e in Task { @MainActor in self?.lastError = "Session error: \(e)" } }.store(in: sessionBag)
 
-    // Camera permission is the only DAT permission (api-notes §3); it bounces through the Meta AI app.
-    if try await wearables.checkPermissionStatus(.camera) != .granted {
-      guard try await wearables.requestPermission(.camera) == .granted else { throw DATError.cameraDenied }
-    }
+    do {
+      try s.start()
 
-    // Camera: raw frames (no HEVC decoding on our side), highest resolution, lowest legal fps — we sample every ~1.75 s anyway.
-    let config = StreamConfiguration(videoCodec: .raw, resolution: .high, frameRate: 2)
-    guard let cam = try s.addCamera(config: config) else { throw DATError.cameraUnavailable }
-    camera = cam
-    let stream = cam.stream
-    stream.statePublisher.listen { [weak self] st in Task { @MainActor in self?.streamState = st } }.store(in: bag)
-    stream.videoFramePublisher.listen { [weak self] frame in
-      guard let self, let img = Self.cgImage(from: frame) else { return }
-      Task { @MainActor in self.frameCount += 1 }
-      self.onFrame?(img)                                   // off-main by design: never block the DAT thread
-    }.store(in: bag)
-    stream.photoDataPublisher.listen { [weak self] photo in self?.onPhoto?(photo.data) }.store(in: bag)
-    stream.errorPublisher.listen { [weak self] e in
-      Task { @MainActor in
-        self?.lastError = "Stream error: \(e)"
-        if case .photoCaptureFailed = e { self?.onPhotoError?("capture_failed") }
+      // One-shot handshake on the only stateStream() we take. The stream FINISHES at .stopped (api-notes §3),
+      // so an already-stopped session falls straight through the loop — `started` distinguishes that from a
+      // real .started instead of silently continuing into the Meta AI permission bounce.
+      var started = false
+      for await st in s.stateStream() where st == .started || st == .stopped {
+        started = (st == .started)
+        break
       }
-    }.store(in: bag)
-    stream.start()
+      guard started else { throw DATError.sessionStopped }
 
-    // Display on the SAME session — the spike question.
-    let d = try s.addDisplay()
-    display = d
-    d.statePublisher.listen { [weak self] st in Task { @MainActor in self?.displayState = st } }.store(in: bag)
-    d.start()
+      // Camera permission is the only DAT permission (api-notes §3); it bounces through the Meta AI app.
+      if try await wearables.checkPermissionStatus(.camera) != .granted {
+        guard try await wearables.requestPermission(.camera) == .granted else { throw DATError.cameraDenied }
+      }
+
+      // Camera: raw frames (no HEVC decoding on our side), highest resolution, lowest legal fps — we sample every ~1.75 s anyway.
+      let config = StreamConfiguration(videoCodec: .raw, resolution: .high, frameRate: 2)
+      guard let cam = try s.addCamera(config: config) else { throw DATError.cameraUnavailable }
+      camera = cam
+      let stream = cam.stream
+
+      // Snapshot the callbacks: the listener closures below run off-main and must never read MainActor state.
+      let onFrame = self.onFrame
+      let onPhoto = self.onPhoto
+      let onPhotoError = self.onPhotoError
+
+      stream.statePublisher.listen { [weak self] st in Task { @MainActor in self?.streamState = st } }.store(in: sessionBag)
+      stream.videoFramePublisher.listen { [weak self] frame in
+        guard let img = Self.cgImage(from: frame) else { return }
+        Task { @MainActor in self?.frameCount += 1 }
+        onFrame?(img)                                   // off-main by design: never block the DAT thread
+      }.store(in: sessionBag)
+      stream.photoDataPublisher.listen { photo in onPhoto?(photo.data) }.store(in: sessionBag)
+      stream.errorPublisher.listen { [weak self] e in
+        Task { @MainActor in self?.lastError = "Stream error: \(e)" }
+        if case .photoCaptureFailed = e { onPhotoError?("capture_failed") }
+      }.store(in: sessionBag)
+      stream.start()
+
+      // Display on the SAME session — the spike question.
+      let d = try s.addDisplay()
+      display = d
+      d.statePublisher.listen { [weak self] st in Task { @MainActor in self?.displayState = st } }.store(in: sessionBag)
+      d.start()
+    } catch {
+      stop()
+      throw error
+    }
   }
 
   func stop() {
@@ -123,17 +152,13 @@ final class DATSessionManager: ObservableObject {
     display?.stop(); display = nil
     camera?.stop(); camera = nil
     session?.stop(); session = nil
-    bag.clear()
-    // Re-subscribe the two Wearables-level listeners cleared with the bag.
-    wearables.addRegistrationStateListener { [weak self] s in Task { @MainActor in self?.registration = s } }.store(in: bag)
-    wearables.addDevicesListener { [weak self] ids in
-      Task { @MainActor in self?.deviceName = ids.first.flatMap { self?.wearables.deviceForIdentifier($0)?.nameOrId() } }
-    }.store(in: bag)
+    sessionBag.clear()      // lifetimeBag survives: the registration/devices listeners are not per-session
   }
 
   /// Fire-and-forget; the JPEG arrives on onPhoto, failure on onPhotoError (api-notes §5).
   func capturePhoto() -> Bool {
-    guard let cam = camera, streamState == .streaming else { return false }
+    // Gate on the live stream state, not the @Published mirror (which lags by one main-actor hop).
+    guard let cam = camera, cam.stream.state == .streaming else { return false }
     return cam.stream.capturePhoto(format: .jpeg)
   }
 
