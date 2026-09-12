@@ -1,0 +1,12 @@
+# NEVER ship secrets or junk into the image
+.env
+.env.*
+env.template
+node_modules
+**/node_modules
+.next
+console
+corpus
+glassbridge
+.git
+*.log
