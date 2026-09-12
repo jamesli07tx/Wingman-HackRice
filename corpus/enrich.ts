@@ -27,7 +27,7 @@ import dotenv from "dotenv";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { createClient } from "@supabase/supabase-js";
-import { SummaryCardSchema } from "@wingman/shared";
+import { SUMMARY_CARD_RULES, SummaryCardSchema } from "@wingman/shared";
 import { z } from "zod";
 
 // --- env (same explicit-path pattern as cortex/src/index.ts) ----------------
@@ -74,7 +74,10 @@ const EnrichResultSchema = z.strictObject({
 });
 type EnrichResult = z.infer<typeof EnrichResultSchema>;
 
-// Byte-stable — do not interpolate anything into this string (prompt caching).
+// Byte-stable — composed from module constants only; nothing interpolated per
+// call (prompt caching). The card half is the ONE canonical rules block from
+// @wingman/shared, also used by cortex ContextService's live path — the two
+// paths cannot drift on card style (DESIGN.md Appendix C3: one schema, one prompt).
 const ENRICH_SYSTEM = `You write the pre-generated employer card that Wingman shows in a 600x600 monocular heads-up display at a university career fair. The wearer is a student standing at this employer's booth, reading the lens while making eye contact with a recruiter. The card must be absorbed in under two seconds.
 
 Produce all three fields in one response:
@@ -83,16 +86,9 @@ summaryMd — one plain-prose paragraph, 2 to 4 sentences, at most 600 character
 
 roles — 0 to 8 concrete internship or new-grad role titles this employer recruits for, each at most 60 characters (for example "Software Engineer Intern", "New Grad Backend Engineer", "Hardware Design Intern"). Use the role titles the source text actually shows. Return an empty array rather than guessing.
 
-card — the HUD summary card, under hard character limits:
-  title: the company name as a student would say it out loud. At most 28 characters.
-  subtitle: what the company does, at most 48 characters, no trailing period.
-  lines: 3 to 5 bullets, each at most 40 characters. The first line starts with "Hiring: " and names roles when they are known. The rest are concrete facts — stack, product, scale, location, program name — one fact per line, each standing alone. No emoji, no markdown, no trailing punctuation, no sentence fragments that depend on the previous line.
+card — the HUD summary card, built under the following rules.
 
-Hard rules:
-- Every character limit is a hard limit. Count the characters and rewrite shorter rather than exceed one by even a single character.
-- Ground every claim in the careers-page text provided, or in widely known public fact about this company. Never invent a role, a deadline, a salary, a headcount, or a program name.
-- If the careers-page text is empty, truncated, or useless (a cookie banner, a login wall, a JavaScript shell), say so to yourself and fall back to well-known public facts about the company. Keep the lines general and true rather than fabricating specifics.
-- Write in a neutral third-person register. No marketing voice, no "we", no adjectives like "innovative" or "world-class", no exclamation marks.`;
+${SUMMARY_CARD_RULES}`;
 
 // --- careers-page fetch -----------------------------------------------------
 function stripTags(html: string): string {
