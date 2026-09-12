@@ -7,7 +7,7 @@
 // AT-INTEGRATION: on every `armed` this logs "armed.config: compiled=<defaults> received=<config>" — verify the received values win (DESIGN_MAC.md required site for FrameSampler/HudRenderer).
 //
 // INTEGRATION: BridgeController
-// IN:  StatusView actions (link/unlink/start/stop/spike/toggles); CortexSocket.onMessage; DATSessionManager.onFrame/onPhoto
+// IN:  StatusView actions (link/unlink/connect/disconnect/start/stop/spike/toggles); CortexSocket.onMessage; DATSessionManager.onFrame/onPhoto
 // OUT: FrameSampler.offer/handlePhoto, HudRenderer.render, AudioKeepalive.start/stop, published state for StatusView
 // WIRE: one instance created by App.swift as a @StateObject, AFTER DATSessionManager.configure()
 
@@ -31,6 +31,8 @@ final class BridgeController: ObservableObject {
   @Published private(set) var framesSent = 0
   @Published private(set) var spikeResult: String?
   @Published private(set) var spikeRunning = false
+  /// connectGlasses() is in flight — StatusView disables the button and spins.
+  @Published private(set) var glassesConnecting = false
   @Published private(set) var testFramesRunning = false
   @Published var useDevHarness: Bool {
     didSet {
@@ -52,7 +54,7 @@ final class BridgeController: ObservableObject {
   private let battery = BatteryMonitor()
   /// FIFO: Cortex may have more than one capture_photo outstanding, and DAT's photo callback carries no reqId.
   private var pendingPhotoReqIds: [String] = []
-  /// The in-flight `dat.start()`; cancelled and awaited so two arms can never race inside DAT.
+  /// The in-flight arm (connect + startCamera); cancelled and awaited so two arms can never race inside DAT.
   private var armTask: Task<Void, Never>?
   private var simulatorFrameTimer: Timer?
   private var datChanges: AnyCancellable?
@@ -134,6 +136,55 @@ final class BridgeController: ObservableObject {
     socket = s
   }
 
+  // MARK: glasses connection (hardware session — independent of any Cortex session)
+  //
+  // WHY THIS IS SEPARATE: the SDK re-joins the glasses' Wi-Fi hotspot every time a camera stream starts, and the
+  // hotspot disappears the moment the DeviceSession ends. Tearing the session down per Cortex session therefore
+  // made iOS pop "Unable to join the network Meta RB Display" on every Start. So: connect ONCE (session +
+  // display + renderer), then only the camera follows Start/Stop.
+
+  func connectGlasses() async {
+    #if canImport(MWDATCore)
+    guard let dat, DATSessionManager.isHardwareAvailable, !glassesConnecting else { return }
+    guard !dat.isConnected else { return }
+    glassesConnecting = true
+    defer { glassesConnecting = false }
+    lastError = nil
+    do {
+      // dat.connect() has no deadline of its own: if the handshake never reaches .started/.stopped it would hang
+      // arm / spike / playground forever. Race it against 30 s — every caller must end in connected or an error.
+      let ok = try await withThrowingTaskGroup(of: Bool.self) { group in
+        group.addTask { try await dat.connect(); return true }
+        group.addTask { try await Task.sleep(nanoseconds: 30_000_000_000); return false }
+        let first = try await group.next()!
+        group.cancelAll()
+        return first
+      }
+      guard ok else {
+        dat.disconnect()
+        lastError = "Glasses: connect timed out (session=\(dat.sessionState))"
+        return
+      }
+      guard let d = dat.display else { lastError = "Glasses: display not attached"; return }
+      // ONE renderer for the life of the connection: cards, spike and playground all draw through it.
+      if renderer == nil { renderer = HudRendererBox(display: d, minGapMs: ArmedConfig.defaults.renderMinGapMs) }
+    } catch {
+      lastError = "Glasses: \(error.localizedDescription)"
+    }
+    #endif
+  }
+
+  func disconnectGlasses() {
+    guard !armed else { lastError = "Stop the session first"; return }
+    renderer = nil
+    #if canImport(MWDATDisplay)
+    playgroundShown = false
+    #endif
+    #if canImport(MWDATCore)
+    dat?.disconnect()
+    #endif
+  }
+
   // MARK: session (DESIGN.md §5.1 responsibility 2)
 
   func start() {
@@ -158,9 +209,9 @@ final class BridgeController: ObservableObject {
     let cfg = config ?? .defaults
     NSLog("armed.config: compiled=\(ArmedConfig.defaults) received=\(String(describing: config)) → using \(cfg)")
 
-    // ANY `armed` while we are already armed is a sessionId + config update, never a restart. The DAT session
+    // ANY `armed` while we are already armed is a sessionId + config update, never a restart. The camera
     // belongs to the user's Start/Stop, not to Cortex's session id: a WS blip makes Cortex mint a NEW sessionId,
-    // and re-entering the hardware path would tear down a working session (start() begins with stop()).
+    // and re-entering the hardware path would re-attach a camera that is already streaming.
     if armed {
       sessionId = newSessionId
       sampler.apply(cfg)
@@ -170,7 +221,6 @@ final class BridgeController: ObservableObject {
 
     sessionId = newSessionId
     armed = true
-    renderer = nil                  // any previous Display belongs to a session dat.start() is about to replace
     sampler.apply(cfg)
     sampler.start()
     keepalive.start()
@@ -180,12 +230,14 @@ final class BridgeController: ObservableObject {
     let previous = armTask
     previous?.cancel()
     armTask = Task {
-      _ = await previous?.value     // serialize: never two overlapping dat.start() calls
+      _ = await previous?.value     // serialize: never two overlapping DAT attach sequences
       guard !Task.isCancelled else { return }
+      if !dat.isConnected { await connectGlasses() }          // first Start of the app also brings the link up
+      guard !Task.isCancelled, dat.isConnected else { return }  // connectGlasses already reported the failure
+      renderer?.apply(renderMinGapMs: cfg.renderMinGapMs)     // never rebuilt: the display outlives the session
       do {
-        try await dat.start()
-        guard !Task.isCancelled else { dat.stop(); return }   // Stop arrived while DAT was still coming up
-        if let d = dat.display { renderer = HudRendererBox(display: d, minGapMs: cfg.renderMinGapMs) }
+        try await dat.startCamera()
+        guard !Task.isCancelled else { dat.stopCamera(); return }   // Stop arrived while the camera was coming up
       } catch {
         guard !Task.isCancelled else { return }
         lastError = "Glasses: \(error.localizedDescription)"
@@ -196,9 +248,9 @@ final class BridgeController: ObservableObject {
   }
 
   private func disarm() {
-    // Released, not retained: awaiting a hung dat.start() would wedge every later Start. A stale start()
-    // that fails later cannot hurt the newer session — DATSessionManager.start()'s catch tears down only
-    // when `session === s`, i.e. only when the failing session is still the live one.
+    // Released, not retained: awaiting a hung attach would wedge every later Start. A stale attach that fails
+    // later cannot hurt the newer session — DATSessionManager guards both connect() and startCamera() on
+    // `session === s`, i.e. it only acts while the session it started on is still the live one.
     armTask?.cancel(); armTask = nil
     armed = false
     sessionId = nil
@@ -207,9 +259,8 @@ final class BridgeController: ObservableObject {
     keepalive.stop()
     stopTestFrames()
     #if canImport(MWDATCore)
-    dat?.stop()
+    dat?.stopCamera()       // the DeviceSession, the display and the renderer stay up — see connectGlasses()
     #endif
-    renderer = nil
   }
 
   // MARK: Cortex → device (DESIGN.md §5.1 responsibility 3)
@@ -299,40 +350,109 @@ final class BridgeController: ObservableObject {
     #if canImport(MWDATCore)
     guard let dat else { spikeResult = "SPIKE N/A: \(DATSessionManager.configureError ?? "DAT not configured")"; return }
     guard DATSessionManager.isHardwareAvailable else { spikeResult = "SPIKE N/A in Simulator"; return }
-    defer { dat.stop() }
-    do {
-      // dat.start() has no deadline of its own: if the handshake never reaches .started/.stopped the gate would
-      // sit at "SPIKE running…" forever. Race it against 30 s — the gate must always end in OK or FAIL.
-      let started = try await withThrowingTaskGroup(of: Bool.self) { group in
-        group.addTask { try await dat.start(); return true }
-        group.addTask { try await Task.sleep(nanoseconds: 30_000_000_000); return false }
-        let first = try await group.next()!
-        group.cancelAll()
-        return first
-      }
-      guard started else { spikeResult = "SPIKE FAIL: start() timed out (session=\(dat.sessionState))"; return }
-      let start = Date()
-      while dat.rawFrameCount == 0 && Date().timeIntervalSince(start) < 20 { try await Task.sleep(nanoseconds: 200_000_000) }
-      guard dat.rawFrameCount > 0 else { spikeResult = "SPIKE FAIL: no camera frame within 20 s (stream=\(dat.streamState)) \(dat.lastError ?? "")"; return }
-      guard let d = dat.display else { spikeResult = "SPIKE FAIL: display not attached \(dat.lastError ?? "")"; return }
-      let r = HudRendererBox(display: d, minGapMs: 500)
-      r.render(HudCard(cardId: "spike", seq: 1, kind: .hint, title: "Wingman", subtitle: "hello, world",
-                       lines: ["camera stream: OK (\(dat.rawFrameCount) frames)", "decoded: \(dat.frameCount)", "display: sent"], footer: "hour-zero spike"))
-      try await Task.sleep(nanoseconds: 3_000_000_000)
-      spikeResult = "SPIKE OK: \(dat.rawFrameCount) frames arrived, \(dat.frameCount) decoded + card on lens? (check glasses) display=\(dat.displayState) \(dat.lastError ?? "")"
-    } catch {
-      spikeResult = "SPIKE FAIL: \(error.localizedDescription)"
+    defer { dat.stopCamera() }          // camera only: the session + display stay connected for the next Start
+    await connectGlasses()              // carries the 30 s deadline, so this can never hang the gate
+    guard dat.isConnected else {
+      spikeResult = "SPIKE FAIL: \(lastError ?? "connect failed") (session=\(dat.sessionState))"
+      return
     }
+    do { try await dat.startCamera() }
+    catch { spikeResult = "SPIKE FAIL: \(error.localizedDescription)"; return }
+
+    let start = Date()
+    while dat.rawFrameCount == 0 && Date().timeIntervalSince(start) < 20 { try? await Task.sleep(nanoseconds: 200_000_000) }
+    guard dat.rawFrameCount > 0 else { spikeResult = "SPIKE FAIL: no camera frame within 20 s (stream=\(dat.streamState)) \(dat.lastError ?? "")"; return }
+    guard let r = renderer else { spikeResult = "SPIKE FAIL: display not attached \(dat.lastError ?? "")"; return }
+    r.render(HudCard(cardId: "spike", seq: 1, kind: .hint, title: "Wingman", subtitle: "hello, world",
+                     lines: ["camera stream: OK (\(dat.rawFrameCount) frames)", "decoded: \(dat.frameCount)", "display: sent"], footer: "hour-zero spike"))
+    try? await Task.sleep(nanoseconds: 3_000_000_000)
+    spikeResult = "SPIKE OK: \(dat.rawFrameCount) frames arrived, \(dat.frameCount) decoded + card on lens? (check glasses) display=\(dat.displayState) \(dat.lastError ?? "")"
     #else
     spikeResult = "SPIKE N/A: DAT not linked"
     #endif
   }
+
+  // MARK: display playground (Debug) — DisplayPlayground.swift
+  //
+  // Flip real cards onto the lens with no Cortex, no session and no network, to judge legibility and pick a
+  // HudStyle on hardware. It shares the ONE connection and the ONE renderer with everything else, so a page
+  // flip is just a send(); it refuses to run while armed only because it would fight the Cortex cards.
+
+  #if canImport(MWDATDisplay)
+  @Published private(set) var playgroundIndex = 0
+  @Published var playgroundStyle: HudStyle = .plain
+  @Published private(set) var playgroundStatus: String?
+  /// So the first press after a Stop shows the CURRENT page rather than skipping one.
+  private var playgroundShown = false
+
+  /// delta = +1 / −1.
+  func playgroundShow(_ delta: Int) async {
+    guard !armed, !spikeRunning else { playgroundStatus = "Stop the session first"; return }
+    guard let r = await playgroundRendererReady() else { return }
+    r.style = playgroundStyle
+    r.clip = false   // fit probes must reach the lens unclipped
+    let pages = DisplayPlayground.pages
+    if playgroundShown { playgroundIndex = (((playgroundIndex + delta) % pages.count) + pages.count) % pages.count }
+    playgroundShown = true
+    let page = pages[playgroundIndex]
+    r.render(page.card)
+    playgroundStatus = "\(playgroundIndex + 1)/\(pages.count) \(page.name) [\(playgroundStyle.rawValue)]"
+  }
+
+  /// Page (a), then page (b) 35 s later — past the documented 20 s dim / 25 s sleep (api-notes §6): does a send
+  /// wake the lens by itself, or does the wearer have to? Unanswerable without hardware, hence this button.
+  func playgroundSleepTest() async {
+    guard !armed, !spikeRunning else { playgroundStatus = "Stop the session first"; return }
+    guard let r = await playgroundRendererReady() else { return }
+    r.style = playgroundStyle
+    r.clip = false   // fit probes must reach the lens unclipped
+    let pages = DisplayPlayground.pages
+    r.render(pages[0].card)
+    playgroundStatus = "sleep test: 1st card sent, waiting 35 s…"
+    try? await Task.sleep(nanoseconds: 35_000_000_000)
+    var next = pages[1].card
+    next.seq += 1
+    r.render(next)
+    playgroundStatus = "sleep test: sent 2nd card after 35 s — did the lens wake?"
+  }
+
+  func playgroundClear() async {
+    do { try await dat?.display?.clearDisplay(); playgroundStatus = "cleared" }
+    catch { playgroundStatus = "clear failed: \(error.localizedDescription)" }
+  }
+
+  /// Leaves the lens blank and the renderer back on production settings — the CONNECTION stays up
+  /// (disconnecting is what makes iOS re-prompt for the glasses' Wi-Fi network).
+  func playgroundStop() async {
+    await playgroundClear()
+    if let r = renderer?.inner { r.style = .card; r.clip = true }
+    playgroundIndex = 0
+    playgroundShown = false
+    playgroundStatus = "stopped"
+  }
+
+  /// Connects on first use (30 s deadline lives in connectGlasses) and hands back the shared renderer.
+  private func playgroundRendererReady() async -> HudRenderer? {
+    guard let dat else { playgroundStatus = "playground N/A: \(DATSessionManager.configureError ?? "DAT not configured")"; return nil }
+    guard DATSessionManager.isHardwareAvailable else { playgroundStatus = "playground N/A in Simulator"; return nil }
+    if !dat.isConnected {
+      playgroundStatus = "playground: connecting…"
+      await connectGlasses()
+    }
+    guard let r = renderer?.inner else {
+      playgroundStatus = "playground: \(lastError ?? "display not attached")"
+      return nil
+    }
+    return r
+  }
+  #endif
 }
 
 /// Thin wrapper so BridgeController compiles when MWDATDisplay is absent (the iOS target always links it, but keep the seam explicit).
 final class HudRendererBox {
   #if canImport(MWDATDisplay)
-  private let inner: HudRenderer
+  /// Not private: the Debug playground reaches through to flip `style`/`clip` on the shared renderer.
+  let inner: HudRenderer
   init(display: Display, minGapMs: Int) { inner = HudRenderer(display: display, minGapMs: minGapMs) }
   func render(_ card: HudCard) { inner.render(card) }
   func apply(renderMinGapMs: Int) { inner.apply(renderMinGapMs: renderMinGapMs) }

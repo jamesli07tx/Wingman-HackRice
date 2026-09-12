@@ -91,7 +91,7 @@ final class RenderCoalescer {
 enum HudText {
   static let maxLines = 5
   static let maxChars = 44        // contract says ≈ 40; small slack, then hard clip
-  static let maxTitleChars = 28   // heading is the largest style — clips sooner
+  static let maxTitleChars = 22   // heading is the largest style — clips sooner (measured on-lens)
 
   static func clip(_ s: String, max: Int = maxChars) -> String {
     // Flatten newlines first: one line of text must never become extra rows on a screen that only scrolls.
@@ -109,16 +109,27 @@ enum HudText {
 #if canImport(MWDATDisplay)
 import MWDATDisplay
 
+/// Layout variants, compared on real hardware via DisplayPlayground (Debug). `.card` is the shipping layout
+/// (picked on-lens); the others exist only so a human wearing the glasses can compare.
+enum HudStyle: String, CaseIterable { case plain, card, icon, iconCard }
+
 final class HudRenderer {
   private let display: Display
-  private let coalescer: RenderCoalescer
+  /// IUO so the draw closure below can read `self.style` — `style` is chosen per-draw, not frozen at init.
+  private var coalescer: RenderCoalescer!
+  /// Read on the coalescer's queue (.main), written from the main actor. Playground-only in practice.
+  var style: HudStyle = .card
+  /// Playground fit probes render unclipped; production leaves this true.
+  var clip = true
 
   init(display: Display, minGapMs: Int = ArmedConfig.defaults.renderMinGapMs) {
     self.display = display
-    self.coalescer = RenderCoalescer(minGapMs: minGapMs, queue: .main) { card, done in
+    self.coalescer = RenderCoalescer(minGapMs: minGapMs, queue: .main) { [weak self] card, done in
+      let style = self?.style ?? .plain      // read before the Task: only Sendable values cross into it
+      let clip = self?.clip ?? true
       Task {
         defer { done() }   // the coalescer holds the next draw until the send has actually finished
-        do { try await display.send(HudRenderer.flexBox(for: card)) }
+        do { try await display.send(HudRenderer.flexBox(for: card, style: style, clip: clip)) }
         catch { NSLog("HudRenderer: display.send failed for \(card.cardId)#\(card.seq): \(error)") }
       }
     }
@@ -128,14 +139,43 @@ final class HudRenderer {
 
   func render(_ card: HudCard) { coalescer.submit(card) }
 
-  /// title (heading) / subtitle (secondary) / ≤ 5 lines (body) / footer (meta, secondary). Root must be a FlexBox.
-  static func flexBox(for card: HudCard) -> FlexBox {
-    FlexBox(direction: .column, spacing: 6, alignment: .start, crossAlignment: .stretch, padding: EdgeInsets(all: 24)) {
-      Text(HudText.clip(card.title, max: HudText.maxTitleChars), style: .heading)
-      if let subtitle = card.subtitle { Text(HudText.clip(subtitle), style: .body, color: .secondary) }
-      for line in HudText.lines(of: card) { Text(line, style: .body) }
-      if let footer = card.footer { Text(HudText.clip(footer), style: .meta, color: .secondary) }
+  /// The closest IconName the SDK ships for each kind (docs/dat-0.9.0-api-notes.md §6 — there is no
+  /// document/hourglass glyph; `.fourCornerFrame` is the scan viewfinder, `.museumBuilding` the only building).
+  static func icon(for kind: CardKind) -> IconName {
+    switch kind {
+    case .ack: return .clock
+    case .company: return .museumBuilding
+    case .pitch: return .star
+    case .scan: return .fourCornerFrame
+    case .hint: return .lightBulb
+    case .error: return .exclamationTriangle
     }
+  }
+
+  /// title (heading) / subtitle (secondary) / ≤ 5 lines (body) / footer (meta, secondary). Root must be a FlexBox.
+  /// `.icon*` styles move the title into a row next to a kind icon; `.card*` put the whole thing on a card background.
+  /// `clip: false` renders the card exactly as given (playground fit probes); production always clips.
+  static func flexBox(for card: HudCard, style: HudStyle = .plain, clip: Bool = true) -> FlexBox {
+    let title = clip ? HudText.clip(card.title, max: HudText.maxTitleChars) : card.title
+    let lines = clip ? HudText.lines(of: card) : (card.lines ?? [])
+    let subtitle = card.subtitle.map { clip ? HudText.clip($0) : $0 }
+    let footer = card.footer.map { clip ? HudText.clip($0) : $0 }
+    let titleText = Text(title, style: .heading)
+    let withIcon = (style == .icon || style == .iconCard)
+    let root = FlexBox(direction: .column, spacing: 6, alignment: .start, crossAlignment: .stretch, padding: EdgeInsets(all: 24)) {
+      if withIcon {
+        FlexBox(direction: .row, spacing: 12, crossAlignment: .center) {
+          Icon(name: HudRenderer.icon(for: card.kind))
+          titleText
+        }
+      } else {
+        titleText
+      }
+      if let subtitle { Text(subtitle, style: .body, color: .secondary) }
+      for line in lines { Text(line, style: .body) }
+      if let footer { Text(footer, style: .meta, color: .secondary) }
+    }
+    return (style == .card || style == .iconCard) ? root.background(.card) : root
   }
 }
 #endif

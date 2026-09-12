@@ -20,6 +20,7 @@
 		7B95AC42F2B040925A25E17D /* CortexSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00B1743B6CEFEFAD09B8640D /* CortexSocket.swift */; };
 		83FC20D913FEF067839B92EE /* DATSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4E2559DD38650D0279ED945 /* DATSessionManager.swift */; };
 		892E9DC02C8888FC6C4FCBA3 /* HudRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86E2FB8D175F61D4C454B1C4 /* HudRendererTests.swift */; };
+		94A55F19892E0228951A58C5 /* DisplayPlayground.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5356FBA7A2E6D82EF5C62BE /* DisplayPlayground.swift */; };
 		987862019755A7A14601D102 /* CortexSocketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9133B46962B158E4F2E3A993 /* CortexSocketTests.swift */; };
 		A1A14E23DFAAABF82EF7822B /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DDCA354D98AA777F6C1DC6A /* Protocol.swift */; };
 		A630922F9FFB9655239DDF89 /* MWDATMockDevice in Frameworks */ = {isa = PBXBuildFile; productRef = 551A33E94F933CE3487829C2 /* MWDATMockDevice */; };
@@ -62,11 +63,12 @@
 		AB0B19928FD4A4A9D1E5BA67 /* HudRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HudRenderer.swift; sourceTree = "<group>"; };
 		B905996BC4B5066EF1676CE4 /* FrameSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSampler.swift; sourceTree = "<group>"; };
 		CB6997088320169560A4446B /* HEVCFrameDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HEVCFrameDecoder.swift; sourceTree = "<group>"; };
+		D5356FBA7A2E6D82EF5C62BE /* DisplayPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayPlayground.swift; sourceTree = "<group>"; };
 		DCC25DB79E1DE6F8F326AF89 /* LinkClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkClient.swift; sourceTree = "<group>"; };
 		E21C50607EFEF51382155EA3 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		F2FE628C0697A064C96F62AF /* Wingman.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Wingman.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeController.swift; sourceTree = "<group>"; };
-		"TEMP_B018F3B6-C8F1-4D88-9209-DC541F72E407" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		"TEMP_8C752B70-9FD6-4E18-8230-8EE2DE493728" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -116,6 +118,7 @@
 				143BCCD11C10823E0FE76773 /* Config.swift */,
 				00B1743B6CEFEFAD09B8640D /* CortexSocket.swift */,
 				A4E2559DD38650D0279ED945 /* DATSessionManager.swift */,
+				D5356FBA7A2E6D82EF5C62BE /* DisplayPlayground.swift */,
 				B905996BC4B5066EF1676CE4 /* FrameSampler.swift */,
 				CB6997088320169560A4446B /* HEVCFrameDecoder.swift */,
 				AB0B19928FD4A4A9D1E5BA67 /* HudRenderer.swift */,
@@ -136,10 +139,10 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		"TEMP_85A67E92-D122-4FE0-A9D7-00F84989C4B1" /* glassbridge */ = {
+		"TEMP_FB2E0281-2B54-4E75-85DE-D5D21B646C2B" /* glassbridge */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_B018F3B6-C8F1-4D88-9209-DC541F72E407" /* Config.xcconfig */,
+				"TEMP_8C752B70-9FD6-4E18-8230-8EE2DE493728" /* Config.xcconfig */,
 			);
 			path = glassbridge;
 			sourceTree = "<group>";
@@ -240,6 +243,7 @@
 				0228D3C416FE871855936A42 /* Config.swift in Sources */,
 				7B95AC42F2B040925A25E17D /* CortexSocket.swift in Sources */,
 				83FC20D913FEF067839B92EE /* DATSessionManager.swift in Sources */,
+				94A55F19892E0228951A58C5 /* DisplayPlayground.swift in Sources */,
 				7AE3868FED6F5D978CACF325 /* FrameSampler.swift in Sources */,
 				644749E5C2D9FD9134F00B15 /* HEVCFrameDecoder.swift in Sources */,
 				5991DB0D1B49D041A4AB1F48 /* HudRenderer.swift in Sources */,
@@ -334,7 +338,7 @@
 		};
 		9D6513D9C82CCE7BD3D4DAB1 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_B018F3B6-C8F1-4D88-9209-DC541F72E407" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_8C752B70-9FD6-4E18-8230-8EE2DE493728" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -399,7 +403,7 @@
 		};
 		DABFDCF87C106D2CAF6C5A18 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_B018F3B6-C8F1-4D88-9209-DC541F72E407" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_8C752B70-9FD6-4E18-8230-8EE2DE493728" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;

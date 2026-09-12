@@ -4,7 +4,8 @@
 // (Mock Device Kit has no display model) — the display path is hardware-only.
 //
 // INTEGRATION: DATSessionManager
-// IN:  start()/stop()/capturePhoto() from BridgeController; the Meta AI registration callback URL from App.onOpenURL
+// IN:  connect()/startCamera()/stopCamera()/disconnect()/capturePhoto() from BridgeController; the Meta AI
+//      registration callback URL from App.onOpenURL
 // OUT: onFrame(CGImage) off-main for every frame (FrameSampler.offer), onPhoto(Data) (FrameSampler.handlePhoto),
 //      onPhotoError, `display` for HudRenderer, @Published states for StatusView
 // WIRE: BridgeController owns one OPTIONAL instance (nil unless DATSessionManager.configure() succeeded);
@@ -35,14 +36,19 @@ final class DATSessionManager: ObservableObject {
   @Published private(set) var streamState: StreamState = .stopped
   @Published private(set) var displayState: DisplayState = .stopped
   @Published private(set) var lastError: String?
+  /// The HARDWARE session is up (session .started + display attached). Survives every camera start/stop:
+  /// the SDK re-joins the glasses' Wi-Fi hotspot on each camera stream start, and that hotspot is gone the
+  /// instant the DeviceSession ends — so a session churned per Cortex session makes iOS pop
+  /// "Unable to join the network Meta RB Display". Connect ONCE, stream many times.
+  @Published private(set) var isConnected = false
   @Published private(set) var frameCount = 0
   /// Frames that ARRIVED from the glasses (before decoding) — proves the link even if decode fails.
   @Published private(set) var rawFrameCount = 0
 
   // The three callbacks are invoked OFF the main actor, straight from the DAT listener thread, so they are
-  // `@Sendable` and are snapshotted into locals at start() time — the listener closures never touch `self`.
-  // CONSEQUENCE: assign them BEFORE calling start(); assignments made after start() are not picked up until
-  // the next start(). (BridgeController assigns them in its init, so this is satisfied.)
+  // `@Sendable` and are snapshotted into locals at startCamera() time — the listener closures never touch `self`.
+  // CONSEQUENCE: assign them BEFORE calling startCamera(); assignments made after are not picked up until
+  // the next startCamera(). (BridgeController assigns them in its init, so this is satisfied.)
   var onFrame: (@Sendable (CGImage) -> Void)?
   var onPhoto: (@Sendable (Data) -> Void)?
   var onPhotoError: (@Sendable (String) -> Void)?
@@ -54,8 +60,10 @@ final class DATSessionManager: ObservableObject {
   private var camera: Camera?
   /// Wearables-level listeners (registration, devices) — live as long as this object.
   private let lifetimeBag = ListenerTokenBag()
-  /// Session/stream/display listeners — cleared on every stop().
+  /// Session + display listeners — live as long as the connection, cleared only on disconnect().
   private let sessionBag = ListenerTokenBag()
+  /// Camera/stream listeners only — cleared on every stopCamera(), so the session/display ones survive.
+  private let cameraBag = ListenerTokenBag()
 
   static var isHardwareAvailable: Bool {
     #if targetEnvironment(simulator)
@@ -119,10 +127,17 @@ final class DATSessionManager: ObservableObject {
   }
 
   // MARK: session lifecycle — attach order per api-notes §6 "Correct attach order"
+  //
+  // Split in two on purpose: connect() owns the DeviceSession + Display and is meant to stay up for the whole
+  // time the app is open; startCamera()/stopCamera() own the Camera capability and follow the Cortex session.
+  // api-notes §4: "camera.stop() detaches the camera (cascades to stream); session stays up, addCamera() again
+  // to restart" — exactly the shape that keeps the glasses' hotspot from being torn down under iOS.
 
-  /// All-or-nothing: any failure after the session is created tears the whole session back down before throwing.
-  func start() async throws {
-    stop()
+  /// Session + display only, no camera. Idempotent. All-or-nothing: any failure after the session is created
+  /// tears the whole session back down before throwing.
+  func connect() async throws {
+    guard !isConnected else { return }
+    disconnect()                 // a half-built session from a previous failed connect() must not leak
     lastError = nil
     let s = try wearables.createSession(deviceSelector: selector)
     session = s
@@ -143,58 +158,82 @@ final class DATSessionManager: ObservableObject {
       }
       guard started else { throw DATError.sessionStopped }
 
-      // Camera permission is the only DAT permission (api-notes §3); it bounces through the Meta AI app.
-      if try await wearables.checkPermissionStatus(.camera) != .granted {
-        guard try await wearables.requestPermission(.camera) == .granted else { throw DATError.cameraDenied }
-      }
-
-      // Camera: raw frames (no HEVC decoding on our side), highest resolution, lowest legal fps — we sample every ~1.75 s anyway.
-      // Mirrors Meta's CameraAccess sample (hvc1/low/24): HEVC over Bluetooth Classic. `.raw` at .high made the SDK
-      // reach for the Wi-Fi hotspot transport, which a free Personal Team cannot sign (HotspotConfiguration entitlement).
-      let config = StreamConfiguration(videoCodec: .hvc1, resolution: .low, frameRate: 24)
-      guard let cam = try s.addCamera(config: config) else { throw DATError.cameraUnavailable }
-      camera = cam
-      let stream = cam.stream
-
-      // Snapshot the callbacks: the listener closures below run off-main and must never read MainActor state.
-      let onFrame = self.onFrame
-      let onPhoto = self.onPhoto
-      let onPhotoError = self.onPhotoError
-
-      stream.statePublisher.listen { [weak self] st in Task { @MainActor in self?.streamState = st } }.store(in: sessionBag)
-      stream.videoFramePublisher.listen { [weak self] frame in
-        Task { @MainActor in self?.rawFrameCount += 1 }
-        guard let img = Self.cgImage(from: frame) else { return }
-        Task { @MainActor in self?.frameCount += 1 }
-        onFrame?(img)                                   // off-main by design: never block the DAT thread
-      }.store(in: sessionBag)
-      stream.photoDataPublisher.listen { photo in onPhoto?(photo.data) }.store(in: sessionBag)
-      stream.errorPublisher.listen { [weak self] e in
-        Task { @MainActor in self?.lastError = "Stream error: \(e)" }
-        if case .photoCaptureFailed = e { onPhotoError?("capture_failed") }
-      }.store(in: sessionBag)
-      stream.start()
-
-      // Display on the SAME session — the spike question.
+      // Display on the SAME session — the spike question. Attached here, at connect time, so a camera
+      // stop/start never touches it.
       let d = try s.addDisplay()
       display = d
       d.statePublisher.listen { [weak self] st in Task { @MainActor in self?.displayState = st } }.store(in: sessionBag)
       d.start()
+      isConnected = true
     } catch {
-      // Only tear down if `s` is still the live session: a Stop→Start while this start() was suspended (the
-      // handshake, or the Meta AI camera-permission bounce) means stop() here would kill the NEW session.
-      if session === s { stop() }
+      // Only tear down if `s` is still the live session: a disconnect→connect while this connect() was
+      // suspended (the handshake) means disconnect() here would kill the NEW session.
+      if session === s { disconnect() }
       throw error
     }
   }
 
-  func stop() {
+  /// Camera capability on the already-connected session. Idempotent while a camera is attached.
+  func startCamera() async throws {
+    guard let s = session, isConnected else { throw DATError.notConnected }
+    guard camera == nil else { return }
+
+    // Camera permission is the only DAT permission (api-notes §3); it bounces through the Meta AI app.
+    if try await wearables.checkPermissionStatus(.camera) != .granted {
+      guard try await wearables.requestPermission(.camera) == .granted else { throw DATError.cameraDenied }
+    }
+    // The Meta AI bounce suspends us: a disconnect in the meantime must not attach a camera to a dead session.
+    guard session === s else { throw DATError.notConnected }
+
+    // Mirrors Meta's CameraAccess sample (hvc1/low/24): HEVC over Bluetooth Classic. `.raw` at .high made the SDK
+    // reach for the Wi-Fi hotspot transport, which a free Personal Team cannot sign (HotspotConfiguration entitlement).
+    let config = StreamConfiguration(videoCodec: .hvc1, resolution: .low, frameRate: 24)
+    guard let cam = try s.addCamera(config: config) else { throw DATError.cameraUnavailable }
+    camera = cam
+    let stream = cam.stream
+
+    // Snapshot the callbacks: the listener closures below run off-main and must never read MainActor state.
+    let onFrame = self.onFrame
+    let onPhoto = self.onPhoto
+    let onPhotoError = self.onPhotoError
+
+    stream.statePublisher.listen { [weak self] st in Task { @MainActor in self?.streamState = st } }.store(in: cameraBag)
+    stream.videoFramePublisher.listen { [weak self] frame in
+      Task { @MainActor in self?.rawFrameCount += 1 }
+      guard let img = Self.cgImage(from: frame) else { return }
+      Task { @MainActor in self?.frameCount += 1 }
+      onFrame?(img)                                   // off-main by design: never block the DAT thread
+    }.store(in: cameraBag)
+    stream.photoDataPublisher.listen { photo in onPhoto?(photo.data) }.store(in: cameraBag)
+    stream.errorPublisher.listen { [weak self] e in
+      Task { @MainActor in self?.lastError = "Stream error: \(e)" }
+      if case .photoCaptureFailed = e { onPhotoError?("capture_failed") }
+    }.store(in: cameraBag)
+    stream.start()
+  }
+
+  /// Detaches the camera (api-notes §4: cascades to the stream) and leaves the session + display up.
+  func stopCamera() {
+    camera?.stop(); camera = nil
+    streamState = .stopped
+    cameraBag.clear()       // sessionBag survives: the session/display listeners are not per-camera
+  }
+
+  /// Full teardown — this is what makes iOS drop the glasses' hotspot, so call it only on an explicit Disconnect.
+  func disconnect() {
+    stopCamera()
     display?.onPlaybackEvent = nil
     display?.stop(); display = nil
-    camera?.stop(); camera = nil
     session?.stop(); session = nil
     sessionBag.clear()      // lifetimeBag survives: the registration/devices listeners are not per-session
+    isConnected = false
+    sessionState = .idle
+    displayState = .stopped
   }
+
+  /// Compatibility wrappers for the old one-shot lifecycle.
+  func start() async throws { try await connect(); try await startCamera() }
+  func stop() { disconnect() }
 
   /// Fire-and-forget; the JPEG arrives on onPhoto, failure on onPhotoError (api-notes §5).
   func capturePhoto() -> Bool {
@@ -220,10 +259,11 @@ final class DATSessionManager: ObservableObject {
 }
 
 enum DATError: Error, LocalizedError {
-  case sessionStopped, cameraDenied, cameraUnavailable
+  case sessionStopped, notConnected, cameraDenied, cameraUnavailable
   var errorDescription: String? {
     switch self {
     case .sessionStopped: return "DAT session stopped before it started (glasses off / hinges closed / Developer Mode off?)"
+    case .notConnected: return "Glasses not connected — connect first"
     case .cameraDenied: return "Camera permission denied in the Meta AI app"
     case .cameraUnavailable: return "addCamera returned nil — session not .started"
     }
