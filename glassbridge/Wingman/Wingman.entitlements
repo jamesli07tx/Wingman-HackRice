@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>keychain-access-groups</key>
+  <array><string>$(AppIdentifierPrefix)$(CFBundleIdentifier)</string></array>
+  <!-- DAT camera transport on Meta Ray-Ban Display joins the glasses' Wi-Fi hotspot via
+       NEHotspotConfiguration. Without these two the stream sits in .waitingForDevice forever
+       (phone log: "missing the com.apple.developer.networking.HotspotConfiguration entitlement").
+       Same pair as Meta's CameraAccess sample. REQUIRES A PAID Apple Developer team — Apple refuses
+       both capabilities for free Personal Teams. -->
+  <key>com.apple.developer.networking.HotspotConfiguration</key>
+  <true/>
+  <key>com.apple.developer.networking.wifi-info</key>
+  <true/>
+</dict>
+</plist>

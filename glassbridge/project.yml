@@ -1,0 +1,69 @@
+# glassbridge/project.yml — XcodeGen spec. `xcodegen generate` (from glassbridge/) rewrites
+# Wingman.xcodeproj. Edit THIS file, regenerate, commit both. Mechanics per DESIGN_MAC.md §1.1.
+name: Wingman
+options:
+  bundleIdPrefix: com.hackrice
+  deploymentTarget:
+    iOS: "17.2"
+  xcodeVersion: "15.0"
+  createIntermediateGroups: true
+configs:
+  Debug: debug
+  Release: release
+configFiles:
+  Debug: Config.xcconfig
+  Release: Config.xcconfig
+packages:
+  MetaWearablesDAT:
+    url: https://github.com/facebook/meta-wearables-dat-ios
+    exactVersion: 0.9.0
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+targets:
+  Wingman:
+    type: application
+    platform: iOS
+    sources:
+      - path: Wingman
+        excludes: ["Info.plist", "Wingman.entitlements"]
+    dependencies:
+      - package: MetaWearablesDAT
+        product: MWDATCore
+      - package: MetaWearablesDAT
+        product: MWDATCamera
+      - package: MetaWearablesDAT
+        product: MWDATDisplay
+      - package: MetaWearablesDAT
+        product: MWDATMockDevice
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(WINGMAN_BUNDLE_ID)   # from Config.xcconfig / Config.local.xcconfig (App IDs are global across Apple teams)
+        PRODUCT_NAME: Wingman
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Wingman/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Wingman/Wingman.entitlements
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_STRICT_CONCURRENCY: minimal
+  WingmanTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [WingmanTests]
+    dependencies:
+      - target: Wingman
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hackrice.wingman.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Wingman:
+    build:
+      targets:
+        Wingman: all
+        WingmanTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [WingmanTests]

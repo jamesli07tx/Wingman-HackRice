@@ -1,0 +1,20 @@
+// Config.xcconfig — COMMITTED placeholders (DESIGN_MAC.md §1.1). Real values go in
+// Config.local.xcconfig (gitignored), included at the bottom; local values win.
+// xcconfig treats "//" as a comment, so URLs are written as scheme:/$()/host — $() expands to nothing.
+//
+// INTEGRATION(X-MACHINE):
+// COUNTERPART: cortex fly.toml / the deployed Cortex on Fly.io (Windows side hands over the URLs)
+// CONTRACT: DESIGN.md §4.1 REST base URL (https://…) and §4.2 device WebSocket (wss://…/ws/device?token=)
+// AT-INTEGRATION: INTEGRATION-DAY: human copies Config.local.xcconfig.example → Config.local.xcconfig, fills CORTEX_URL and CORTEX_WS_URL with the real Fly URLs (keep the /ws/device path), sets DEVELOPMENT_TEAM, rebuilds onto the phone.
+// Bundle ID. App IDs are global across Apple teams: if a team cannot register this one, override it locally (e.g. com.hackrice.wingman.<initials>).
+WINGMAN_BUNDLE_ID = com.hackrice.wingman
+CORTEX_URL = https:/$()/REPLACE-ME.fly.dev
+CORTEX_WS_URL = wss:/$()/REPLACE-ME.fly.dev/ws/device
+// DevHarness (glassbridge/DevHarness/harness.mjs). On a physical phone replace localhost with the Mac's LAN IP.
+DEV_HARNESS_URL = ws:/$()/localhost:8787/ws/device
+// Personal Team ID from Xcode → Settings → Accounts (10 chars). Empty here; set locally.
+DEVELOPMENT_TEAM =
+// DAT registration (docs/dat-0.9.0-api-notes.md §2). "0" = Developer Mode, no Developer Center provisioning needed.
+META_APP_ID = 0
+META_CLIENT_TOKEN =
+#include? "Config.local.xcconfig"
