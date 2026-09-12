@@ -8,13 +8,13 @@
 // INTEGRATION(X-MACHINE):
 // COUNTERPART: the real Cortex (cortex/src/index.ts on Fly.io) replaces this whole file on integration day
 // CONTRACT: DESIGN.md §4.1 /api/devices/claim, §4.2 device WebSocket
-// AT-INTEGRATION: INTEGRATION-DAY: nothing to change here — stop using it: turn off "Use DevHarness" in StatusView (or set a real CORTEX_WS_URL).
+// AT-INTEGRATION: INTEGRATION-DAY: nothing to change here — stop using it: turn off "Use DevHarness" in the Session tab's Debug tools (or set a real CORTEX_WS_URL).
 //
 // INTEGRATION: DevHarness
 // IN:  POST /api/devices/claim; device→cortex WS messages (hello, session_start/stop, frame, photo, photo_error, status)
 // OUT: claim response { deviceId, deviceToken }; cortex→device WS messages (armed, render, capture_photo, error, session_end);
 //      one ✓/✗ log line per message (shape validation, frame cadence + KB)
-// WIRE: `node harness.mjs` on the Mac; the app points at it while StatusView Debug → "Use DevHarness" is on (DEV_HARNESS_URL)
+// WIRE: `node harness.mjs` on the Mac; the app points at it while Session → Debug tools → "Use DevHarness" is on (DEV_HARNESS_URL)
 import http from "node:http";
 import fs from "node:fs";
 import { WebSocketServer } from "ws";

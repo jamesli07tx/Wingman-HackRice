@@ -13,5 +13,13 @@
   <true/>
   <key>com.apple.developer.networking.wifi-info</key>
   <true/>
+  <!-- Clerk's Frontend API host, decoded from CLERK_PUBLISHABLE_KEY. Required by the Clerk iOS
+       quickstart for passkeys / password autofill; the app must also be registered in the Clerk
+       Dashboard under Native applications with App ID Prefix + Bundle ID (README §1).
+       IF SIGNING FAILS with "Provisioning profile … doesn't include the Associated Domains
+       capability": the App ID does not have that capability yet. Xcode adds it automatically with an
+       Apple ID signed in (Signing & Capabilities, or `xcodebuild -allowProvisioningUpdates`). If your
+       team cannot enable it, DELETE the two lines below — email-code sign-in, Google OAuth and the
+       Cortex JWT all work without it; only passkeys / password autofill need it. -->
 </dict>
 </plist>

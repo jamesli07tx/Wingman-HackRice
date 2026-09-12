@@ -16,9 +16,17 @@ let package = Package(
         "Info.plist",
         "Wingman.entitlements",
         "App.swift",
-        "StatusView.swift",
         "BridgeController.swift",
         "DATSessionManager.swift",
+        // Clerk + SwiftUI screens: iOS-only, and ClerkKit is not a dependency of this package.
+        // CortexClient.swift and the §4.1 DTOs deliberately stay IN, and are tested here.
+        "AuthManager.swift",
+        "Theme.swift",
+        "RootView.swift",
+        "WelcomeView.swift",
+        "ProfileView.swift",
+        "GlassesView.swift",
+        "SessionView.swift",
       ]
     ),
     .testTarget(

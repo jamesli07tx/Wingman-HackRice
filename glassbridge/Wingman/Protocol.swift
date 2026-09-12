@@ -166,7 +166,63 @@ extension CortexToDevice: Decodable {
   }
 }
 
-// MARK: - REST DTOs (DESIGN.md §4.1 — POST /api/devices/claim)
+// MARK: - REST DTOs (DESIGN.md §4.1)
+//
+// Decoded LENIENTLY — every field is optional. Cortex answers GET /api/profile with
+// { profile: null } before a resume is uploaded, and the parser fills whatever the PDF had.
+
+/// The parsed resume Cortex hands back (DESIGN.md §4.1).
+struct ProfileSummary: Codable, Equatable {
+  struct Experience: Codable, Equatable, Identifiable {
+    var org: String?
+    var role: String?
+    var highlight: String?
+    /// SwiftUI list identity only — never on the wire.
+    var id: String { "\(org ?? "")|\(role ?? "")" }
+  }
+
+  var name: String?
+  var headline: String?
+  var skills: [String]?
+  var experiences: [Experience]?
+  var interests: [String]?
+  var links: ProfileLinks?
+}
+
+/// PUT /api/profile/links body. Synthesized `encode` uses encodeIfPresent for Optionals,
+/// so a nil field is OMITTED rather than sent as null — which is what the zod schema wants.
+struct ProfileLinks: Codable, Equatable {
+  var linkedin: String?
+  var x: String?
+  var github: String?
+  var website: String?
+
+  var isEmpty: Bool { [linkedin, x, github, website].allSatisfy { ($0 ?? "").isEmpty } }
+}
+
+/// GET /api/profile → { profile, links }; POST /api/profile/resume → { profile }.
+struct ProfileEnvelope: Decodable, Equatable {
+  var profile: ProfileSummary?
+  var links: ProfileLinks?
+}
+
+/// POST /api/devices/link-code (Bearer) → { code, expiresAt }.
+struct LinkCodeResponse: Decodable, Equatable {
+  var code: String
+  var expiresAt: String?
+}
+
+/// GET /api/devices → [ { deviceId, deviceType, name, lastSeen } ].
+struct DeviceInfo: Decodable, Equatable, Identifiable {
+  var deviceId: String
+  var deviceType: String?
+  var name: String?
+  var lastSeen: String?
+
+  var id: String { deviceId }
+}
+
+// POST /api/devices/claim
 
 struct ClaimRequest: Encodable {
   var code: String

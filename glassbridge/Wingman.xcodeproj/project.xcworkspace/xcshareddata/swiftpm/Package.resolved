@@ -1,6 +1,15 @@
 {
-  "originHash" : "9dd38f857db7479f1816015771b37a83ed7849590400ca2677a9c5f1b5014407",
+  "originHash" : "c842db671a9a505355eceb7443e6b3da1ea22ba719ed327152b683c23068b21f",
   "pins" : [
+    {
+      "identity" : "clerk-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/clerk/clerk-ios",
+      "state" : {
+        "revision" : "059c48344d84e5c0867a9765b21f113327b4a709",
+        "version" : "1.5.4"
+      }
+    },
     {
       "identity" : "meta-wearables-dat-ios",
       "kind" : "remoteSourceControl",
@@ -8,6 +17,24 @@
       "state" : {
         "revision" : "9b1b83d791dfebff7afd452e924a256819094b64",
         "version" : "0.9.0"
+      }
+    },
+    {
+      "identity" : "nuke",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kean/Nuke.git",
+      "state" : {
+        "revision" : "30f7a7e72e0607d304fbf69c799474bd5fb6d1ce",
+        "version" : "13.2.0"
+      }
+    },
+    {
+      "identity" : "phonenumberkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/PhoneNumberKit/PhoneNumberKit",
+      "state" : {
+        "revision" : "15c27dbf811e96b9fe48525389ffe042adb9f8cb",
+        "version" : "5.0.9"
       }
     }
   ],

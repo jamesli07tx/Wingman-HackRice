@@ -3,7 +3,7 @@
 // INTEGRATION(X-MACHINE):
 // COUNTERPART: cortex/src/rest/routes.ts — POST /api/devices/link-code (dashboard shows the code) + POST /api/devices/claim
 // CONTRACT: DESIGN.md §4.1 — { code, deviceType: "glasses_bridge", name } → { deviceId, deviceToken }
-// AT-INTEGRATION: run the code→claim flow once against live Cortex from StatusView; token lands in Keychain; expect HTTP 404 (visible, recoverable in StatusView) until the Windows side deploys; then confirm the device appears in GET /api/devices.
+// AT-INTEGRATION: the account flow (CortexClient.linkGlasses) is what calls this now; the manual code path survives in Session → Debug tools; token lands in Keychain; expect HTTP 404 (visible, recoverable in the UI) until the Windows side deploys; then confirm the device appears in GET /api/devices.
 //
 // INTEGRATION: LinkClient
 // IN:  baseURL (Config.cortexURL or Config.devHarnessHTTPURL), 6-digit code, device name

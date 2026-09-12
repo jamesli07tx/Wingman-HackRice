@@ -14,6 +14,10 @@ CORTEX_WS_URL = wss:/$()/d3odja6xoowymx.cloudfront.net/ws/device
 DEV_HARNESS_URL = ws:/$()/localhost:8787/ws/device
 // Personal Team ID from Xcode → Settings → Accounts (10 chars). Empty here; set locally.
 DEVELOPMENT_TEAM =
+// Clerk sign-in (glassbridge/Wingman/AuthManager.swift). PUBLISHABLE keys are PUBLIC BY DESIGN: they ship
+// in every shipped client and only identify the instance. The SECRET key is Cortex's and never comes here.
+// Frontend API host is base64'd into the key: engaged-pegasus-5798.clerk.accounts.dev (see Wingman.entitlements).
+CLERK_PUBLISHABLE_KEY = pk_test_ZW5nYWdlZC1wZWdhc3VzLTU3OTguY2xlcmsuYWNjb3VudHMuZGV2JA
 // DAT registration (docs/dat-0.9.0-api-notes.md §2). "0" = Developer Mode, no Developer Center provisioning needed.
 META_APP_ID = 0
 META_CLIENT_TOKEN =

@@ -21,6 +21,7 @@
   <key>CORTEX_URL</key><string>$(CORTEX_URL)</string>
   <key>CORTEX_WS_URL</key><string>$(CORTEX_WS_URL)</string>
   <key>DEV_HARNESS_URL</key><string>$(DEV_HARNESS_URL)</string>
+  <key>CLERK_PUBLISHABLE_KEY</key><string>$(CLERK_PUBLISHABLE_KEY)</string>
 
   <!-- DESIGN_MAC.md §1.1 permissions. Deliberately NO NSMicrophoneUsageDescription (D1: no mic) and NO NSCameraUsageDescription (phone camera never used). -->
   <key>NSBluetoothAlwaysUsageDescription</key><string>Wingman connects to your Meta glasses.</string>

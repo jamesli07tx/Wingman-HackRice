@@ -1,10 +1,10 @@
 // Config.swift — build-time configuration injected via Config.xcconfig → Info.plist (DESIGN_MAC.md §1.1),
-// with a runtime override typed into StatusView so integration day needs no rebuild.
+// with a runtime override typed into Session → Debug tools so integration day needs no rebuild.
 //
 // INTEGRATION(X-MACHINE):
 // COUNTERPART: cortex fly.toml / deployed Cortex (Windows side provides the URLs)
 // CONTRACT: DESIGN.md §4.1 base URL (https://…) and §4.2 device WebSocket (wss://…/ws/device?token=)
-// AT-INTEGRATION: INTEGRATION-DAY: no rebuild needed — paste the Fly host into StatusView's "Cortex URL"
+// AT-INTEGRATION: INTEGRATION-DAY: no rebuild needed — paste the Fly host into Session → Debug tools' "Cortex URL"
 // field and tap Apply (it wins over Config.local.xcconfig); the xcconfig stays the build-time default.
 //
 // INTEGRATION: Config
@@ -24,7 +24,7 @@ enum Config {
     return (v?.isEmpty == false) ? v! : def
   }
 
-  /// Whatever the operator pasted into StatusView, verbatim. Empty string reads back as nil (= no override).
+  /// Whatever the operator pasted into Debug tools, verbatim. Empty string reads back as nil (= no override).
   static var cortexOverride: String? {
     get {
       let v = UserDefaults.standard.string(forKey: overrideKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -80,6 +80,10 @@ enum Config {
 
   /// A pasted override is a real deployment by construction, so this flips true the moment one is applied.
   static var isCortexConfigured: Bool { isConfigured(cortexWSURL) && isConfigured(cortexURL) }
+
+  /// Clerk publishable key. PUBLIC by design — it ships inside every client bundle and only names the
+  /// instance; the secret key lives in Cortex. Empty = this build has no sign-in (AuthManager.isAvailable).
+  static var clerkPublishableKey: String { string("CLERK_PUBLISHABLE_KEY", default: "") }
 
   static func httpOrigin(of wsURL: URL) -> URL {
     var c = URLComponents(url: wsURL, resolvingAgainstBaseURL: false)!

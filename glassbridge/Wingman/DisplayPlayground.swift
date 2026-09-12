@@ -4,7 +4,7 @@
 // of ≈ 40 chars. Pair it with HudRenderer.HudStyle to compare plain / card / icon / iconCard on real hardware.
 //
 // INTEGRATION: DisplayPlayground
-// IN:  BridgeController.playgroundShow/playgroundSleepTest (StatusView Debug section)
+// IN:  BridgeController.playgroundShow/playgroundSleepTest (Session → Debug tools)
 // OUT: HudCard values only — no DAT calls of its own
 // WIRE: pure data; the whole file compiles to nothing where MWDATDisplay is absent (macOS `swift build`).
 

@@ -1,5 +1,5 @@
 // BridgeController.swift — wires the dumb pipe together (DESIGN.md §5.1's four responsibilities) and owns all
-// session state StatusView shows. No product logic: it forwards frames up and cards down.
+// session state the UI shows. No product logic: it forwards frames up and cards down.
 //
 // INTEGRATION(X-MACHINE):
 // COUNTERPART: cortex SessionOrchestrator (armed / capture_photo / render / session_end) + DeviceGateway (WS)
@@ -7,8 +7,8 @@
 // AT-INTEGRATION: on every `armed` this logs "armed.config: compiled=<defaults> received=<config>" — verify the received values win (DESIGN_MAC.md required site for FrameSampler/HudRenderer).
 //
 // INTEGRATION: BridgeController
-// IN:  StatusView actions (link/unlink/connect/disconnect/start/stop/spike/toggles); CortexSocket.onMessage; DATSessionManager.onFrame/onPhoto
-// OUT: FrameSampler.offer/handlePhoto, HudRenderer.render, AudioKeepalive.start/stop, published state for StatusView
+// IN:  RootView actions (sign in/resume/links/connect/disconnect/start/stop/spike/toggles); CortexSocket.onMessage; DATSessionManager.onFrame/onPhoto
+// OUT: FrameSampler.offer/handlePhoto, HudRenderer.render, AudioKeepalive.start/stop, published state for RootView's screens
 // WIRE: one instance created by App.swift as a @StateObject, AFTER DATSessionManager.configure()
 
 import Foundation
@@ -21,6 +21,17 @@ import MWDATDisplay   // for `Display` in HudRendererBox; no DAT Text/Image is u
 @MainActor
 final class BridgeController: ObservableObject {
   enum LinkState: Equatable { case unlinked, linked(deviceId: String) }
+
+  /// Clerk. Owned here so one object drives the whole UI; its changes are forwarded below.
+  let auth = AuthManager()
+  /// The parsed resume Cortex holds for this user (nil until one is uploaded).
+  @Published private(set) var profile: ProfileSummary?
+  /// Edited in place by ProfileView's four fields; pushed with saveLinks().
+  @Published var links = ProfileLinks()
+  /// One line under the profile card: "Uploading resume…", "Links saved", or the failure.
+  @Published private(set) var profileStatus: String?
+  /// A profile/link/claim call is in flight — the buttons spin and disable.
+  @Published private(set) var profileBusy = false
 
   @Published private(set) var linkState: LinkState = .unlinked
   @Published private(set) var socketState: CortexSocket.State = .disconnected
@@ -35,12 +46,12 @@ final class BridgeController: ObservableObject {
   @Published private(set) var lastFrame: UIImage?
   @Published private(set) var spikeResult: String?
   @Published private(set) var spikeRunning = false
-  /// connectGlasses() is in flight — StatusView disables the button and spins.
+  /// connectGlasses() is in flight — GlassesView disables the button and spins.
   @Published private(set) var glassesConnecting = false
   @Published private(set) var testFramesRunning = false
   /// dat.streamState == .streaming, mirrored as one Bool for the UI. Derived in the DAT change forwarder below.
   @Published private(set) var cameraReady = false
-  /// Force-reconnect state (StatusView step 2). An "episode" is one run of consecutive automatic recoveries: it
+  /// Force-reconnect state (GlassesView). An "episode" is one run of consecutive automatic recoveries: it
   /// ends after 30 s of healthy streaming, or when the user taps Force reconnect. At most 3 automatic tries.
   @Published private(set) var reconnectAttempt = 0
   @Published private(set) var reconnectStatus: String?
@@ -53,7 +64,7 @@ final class BridgeController: ObservableObject {
       if armed { startKeepAwake() } else { awakeTimer?.invalidate(); awakeTimer = nil }
     }
   }
-  /// The Cortex URL as typed in StatusView (step 1). Applied — not live-bound — so a half-typed host never
+  /// The Cortex URL as typed in Session → Debug tools. Applied — not live-bound — so a half-typed host never
   /// becomes the dial target; `applyCortexURL()` is what commits it.
   @Published var cortexURLText: String = Config.cortexOverride ?? ""
   /// Debug-only escape hatch now: off unless the operator turns it on in Debug tools. It used to default to
@@ -90,6 +101,9 @@ final class BridgeController: ObservableObject {
   private var lostHandled = false
   private var awakeTimer: Timer?
   private var datChanges: AnyCancellable?
+  private var authChanges: AnyCancellable?
+  /// Edge detector: the sign-in side effects (fetch profile, auto-link) run once per transition.
+  private var wasSignedIn = false
   private var batteryObserver: NSObjectProtocol?
 
   init() {
@@ -114,13 +128,18 @@ final class BridgeController: ObservableObject {
     dat?.onFrame = { [s] img in s.offer(img) }
     dat?.onPhoto = { [weak self] data in Task { @MainActor in self?.photoArrived(data) } }
     dat?.onPhotoError = { [weak self] reason in Task { @MainActor in self?.photoFailed(reason) } }
-    // SwiftUI does not observe a nested ObservableObject — forward DAT's changes so StatusView's dots move.
+    // SwiftUI does not observe a nested ObservableObject — forward DAT's changes so the glasses pills move.
     // objectWillChange fires BEFORE the new value lands, hence the hop to read the settled streamState.
     datChanges = dat?.objectWillChange.sink { [weak self] _ in
       self?.objectWillChange.send()
       Task { @MainActor in self?.refreshCameraReady() }
     }
     #endif
+    // Same reason as the DAT forwarder: SwiftUI does not observe a nested ObservableObject.
+    authChanges = auth.objectWillChange.sink { [weak self] _ in
+      self?.objectWillChange.send()
+      Task { @MainActor in self?.authDidChange() }
+    }
     refreshBattery()
     batteryObserver = NotificationCenter.default.addObserver(
       forName: UIDevice.batteryLevelDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -187,6 +206,97 @@ final class BridgeController: ObservableObject {
     } catch {
       lastError = error.localizedDescription     // 404 until Cortex is deployed: visible + recoverable by design
     }
+  }
+
+  // MARK: account (DESIGN.md §4.1 — the whole reason the app stopped needing a dashboard)
+  //
+  // Everything here talks to the REAL Cortex, never the DevHarness: a profile belongs to the Clerk user,
+  // not to whatever socket the Debug toggle happens to be dialing.
+
+  private var cortex: CortexClient {
+    CortexClient(baseURL: Config.cortexURL, tokenProvider: { [auth] in try await auth.token() })
+  }
+
+  /// Signed in AND we know where Cortex is — the precondition for every call below.
+  var accountReady: Bool { auth.isSignedIn && Config.isCortexConfigured }
+
+  /// Signing in is the only step the user takes: the profile comes down and the glasses link themselves.
+  private func authDidChange() {
+    let signedIn = auth.isSignedIn
+    guard signedIn != wasSignedIn else { return }
+    wasSignedIn = signedIn
+    guard signedIn else { return }
+    Task {
+      await refreshProfile()
+      if case .unlinked = linkState { await linkGlassesViaAccount() }
+    }
+  }
+
+  func refreshProfile() async {
+    guard accountReady else { return }
+    do {
+      let envelope = try await cortex.getProfile()
+      profile = envelope.profile
+      if let fetched = envelope.links { links = fetched }
+      else if let fromProfile = envelope.profile?.links { links = fromProfile }
+      profileStatus = nil
+    } catch {
+      profileStatus = error.localizedDescription
+    }
+  }
+
+  func uploadResume(_ data: Data) async {
+    guard accountReady else { profileStatus = "Sign in first"; return }
+    profileBusy = true
+    defer { profileBusy = false }
+    profileStatus = "Uploading resume…"
+    do {
+      profile = try await cortex.uploadResume(pdf: data)
+      if let fromProfile = profile?.links, !fromProfile.isEmpty { links = fromProfile }
+      profileStatus = "Resume parsed"
+    } catch {
+      profileStatus = error.localizedDescription
+    }
+  }
+
+  func saveLinks() async {
+    guard accountReady else { profileStatus = "Sign in first"; return }
+    profileBusy = true
+    defer { profileBusy = false }
+    profileStatus = "Saving links…"
+    do {
+      try await cortex.setLinks(links)
+      profileStatus = "Links saved"
+    } catch {
+      profileStatus = error.localizedDescription
+    }
+  }
+
+  /// Mint a link code as the signed-in user and immediately spend it as this device — the 6-digit
+  /// dance of D9, with nobody typing anything. Runs automatically right after sign-in.
+  func linkGlassesViaAccount() async {
+    guard accountReady else { lastError = "Sign in first"; return }
+    profileBusy = true
+    defer { profileBusy = false }
+    lastError = nil
+    do {
+      let claimed = try await cortex.linkGlasses(name: UIDevice.current.name)
+      Keychain.set(claimed.deviceToken, for: Keychain.deviceTokenKey)
+      Keychain.set(claimed.deviceId, for: Keychain.deviceIdKey)
+      linkState = .linked(deviceId: claimed.deviceId)
+      reconnectIfLinked()
+    } catch {
+      lastError = error.localizedDescription
+    }
+  }
+
+  /// The device token belongs to the account that minted it, so signing out drops it too.
+  func signOut() async {
+    await auth.signOut()
+    unlink()
+    profile = nil
+    links = ProfileLinks()
+    profileStatus = nil
   }
 
   func unlink() {

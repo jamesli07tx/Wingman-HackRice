@@ -17,6 +17,11 @@ packages:
   MetaWearablesDAT:
     url: https://github.com/facebook/meta-wearables-dat-ios
     exactVersion: 0.9.0
+  # Clerk sign-in. 1.5.4 is swift-tools-version 6.2 → needs Xcode 26+ (we build on 26.6).
+  # ClerkKit is dependency-free; ClerkKitUI (the prebuilt AuthView fallback) pulls Nuke + PhoneNumberKit.
+  Clerk:
+    url: https://github.com/clerk/clerk-ios
+    exactVersion: 1.5.4
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -37,6 +42,10 @@ targets:
         product: MWDATDisplay
       - package: MetaWearablesDAT
         product: MWDATMockDevice
+      - package: Clerk
+        product: ClerkKit
+      - package: Clerk
+        product: ClerkKitUI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(WINGMAN_BUNDLE_ID)   # from Config.xcconfig / Config.local.xcconfig (App IDs are global across Apple teams)

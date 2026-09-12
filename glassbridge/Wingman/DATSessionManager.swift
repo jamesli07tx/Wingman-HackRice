@@ -7,7 +7,7 @@
 // IN:  connect()/startCamera()/stopCamera()/disconnect()/capturePhoto() from BridgeController; the Meta AI
 //      registration callback URL from App.onOpenURL
 // OUT: onFrame(CGImage) off-main for every frame (FrameSampler.offer), onPhoto(Data) (FrameSampler.handlePhoto),
-//      onPhotoError, `display` for HudRenderer, @Published states for StatusView
+//      onPhotoError, `display` for HudRenderer, @Published states for GlassesView
 // WIRE: BridgeController owns one OPTIONAL instance (nil unless DATSessionManager.configure() succeeded);
 //       App.swift calls DATSessionManager.configure() before BridgeController is created.
 

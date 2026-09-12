@@ -5,5 +5,7 @@ CORTEX_WS_URL = wss:/$()/wingman-cortex.fly.dev/ws/device
 DEV_HARNESS_URL = ws:/$()/192.168.1.23:8787/ws/device
 DEVELOPMENT_TEAM = ABCDE12345
 WINGMAN_BUNDLE_ID = com.hackrice.wingman.ab
+// Only if you point the app at your own Clerk instance (the committed key is the team's; publishable = public).
+// CLERK_PUBLISHABLE_KEY = pk_test_…
 META_APP_ID = 0
 META_CLIENT_TOKEN =

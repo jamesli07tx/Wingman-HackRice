@@ -21,6 +21,25 @@ Toolchain as built: **Xcode 26.6**, iOS deployment target 17.2, Simulator runtim
       **expire in 7 days** — re-sign the demo morning (DESIGN.md §8); max 3 sideloaded apps; the
       device must be plugged in for install.
 
+**Clerk Dashboard (instance `engaged-pegasus-5798`) — one-time, and sign-in does not work without it:**
+
+- [ ] **Native applications → enable the Native API.** Clerk warns this "opens a public request
+      pathway that bypasses browser-based CAPTCHA challenges" — that is the price of native sign-in.
+- [ ] Register this app there: **App ID Prefix `A3BSYD2WLG`** (the team in `Config.local.xcconfig`)
+      + **Bundle ID `com.jamesli.wingman.glassbridge`** (`WINGMAN_BUNDLE_ID`). Both must match the
+      build exactly or every call 401s.
+- [ ] **Email code** and (if you want the Google button) the **Google social connection** enabled
+      under User & Authentication.
+- [ ] **Xcode → Signing & Capabilities → Associated Domains** must carry
+      `webcredentials:engaged-pegasus-5798.clerk.accounts.dev` (already in `Wingman.entitlements`).
+      The App ID needs the Associated Domains capability enabled or signing fails with *"Provisioning
+      profile … doesn't include the Associated Domains capability"* — Xcode adds it for you with an
+      Apple ID signed in. It is only needed for **passkeys / password autofill**: if your team cannot
+      enable it, delete those two lines from `Wingman/Wingman.entitlements` and email-code sign-in,
+      Google OAuth and the Cortex JWT all still work.
+- [ ] Cortex must hold the **secret** key of the same instance. The **publishable** key is committed
+      in `Config.xcconfig` on purpose — publishable keys are public by design.
+
 ## 2. Build & run
 
 ```bash
@@ -31,6 +50,9 @@ xcodegen generate                                        # rewrites Wingman.xcod
 open Wingman.xcodeproj                                   # scheme: Wingman
 ```
 
+- **Packages:** `MetaWearablesDAT` 0.9.0 and `clerk-ios` **1.5.4** (`ClerkKit` + `ClerkKitUI`, which
+  pulls Nuke + PhoneNumberKit). Clerk 1.5.4 is `swift-tools-version: 6.2` and needs **Xcode 26+**;
+  the app itself stays in Swift 5 language mode.
 - **Re-run `xcodegen generate` whenever a Swift file is added or removed.** XcodeGen writes explicit
   file references — a new `.swift` is invisible to the target until the project is regenerated.
   Edit `project.yml`, never the `.xcodeproj`.
@@ -52,7 +74,7 @@ xcodebuild -project Wingman.xcodeproj -scheme Wingman \
 - **Simulator-degraded:** DAT's `Wearables.configure()` fails in the Simulator (no team, no
   registration), so Connections shows a single red **Glasses** row reading `DAT unavailable: …` (there
   are no Stream/Display rows — there is no DAT session to report on) and the spike reports `SPIKE N/A`.
-  Everything else still works: link, Cortex/DevHarness socket, Debug →
+  Everything else still works: sign-in, link, Cortex/DevHarness socket, Session → Debug tools →
   "Send test frames (Simulator)" pushes synthetic JPEGs through the real `frame` path.
 - **Background modes:** `UIBackgroundModes` carries `bluetooth-central`, `bluetooth-peripheral` and
   `processing` in addition to `audio` (the silent keepalive) because the DAT SDK needs exactly those
@@ -73,8 +95,9 @@ xcodebuild test -project Wingman.xcodeproj -scheme Wingman \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' CODE_SIGNING_ALLOWED=NO
 ```
 
-`Package.swift` compiles only the platform-neutral files (it excludes `App/StatusView/BridgeController/
-DATSessionManager`), which is why `swift test` needs no Apple hardware. The Xcode test run compiles
+`Package.swift` compiles only the platform-neutral files (it excludes `App`, `BridgeController`,
+`DATSessionManager`, `AuthManager` and the six SwiftUI screens — `CortexClient` and the §4.1 DTOs
+deliberately stay in and are tested there), which is why `swift test` needs no Apple hardware. The Xcode test run compiles
 everything.
 
 Known, harmless: the Simulator test run logs objc **duplicate class** warnings between
@@ -94,7 +117,7 @@ Flags: `--port 8787` · `--interval 1750` (the `frameIntervalMs` pushed in `arme
 
 Phone-side wiring: put the Mac's LAN IP in `Config.local.xcconfig`
 (`DEV_HARNESS_URL = ws:/$()/192.168.1.23:8787/ws/device`), rebuild, and turn on Debug tools →
-**"Use DevHarness"** (Debug-only, and **off by default** — the harness must never be what the demo falls
+**Session → Debug tools → "Use DevHarness"** (Debug-only, and **off by default** — the harness must never be what the demo falls
 into by accident; the rows there print both the harness URL and the WS URL actually in use). Any 6-digit
 code links; `000000` is reserved to return 404.
 
@@ -109,19 +132,19 @@ code links; `000000` is reserved to return 404.
       once (it is idempotent — no stacked second copy).
 - [ ] **Every card kind renders.** The script walks `ack` → `company` → `pitch` → `capture_photo` →
       `scan` → `error` (`hint` comes from the `--burst` cards), plus rotations that reuse a `cardId`
-      with a higher `seq`. Watch the lens (and "Last card" in StatusView) for each; rotations must
+      with a higher `seq`. Watch the lens (and the "On the lens" replica on the Session tab) for each; rotations must
       replace in place, never stack.
 - [ ] **Coalescing.** With `--burst`: five renders 40 ms apart at t≈30 s must produce **≤ 1 screen
       replace per 500 ms** (`renderMinGapMs`), and the last card (`Burst 5/5`) is the one left on screen.
 - [ ] **Locked phone, 5 minutes.** Start a session, lock the phone, wait 5 min. Harness keeps logging
       `✓ frame` the whole time (AudioKeepalive's silent loop). This is the M2 screen-lock test, run early.
 - [ ] **Link 404 is visible and recoverable.** Against the placeholder Cortex URL (or harness code
-      `000000`), tap Link: the claim fails and the message shows in StatusView's **Last error** — then a
+      `000000`), tap Link: the claim fails and the message shows in the Session tab's error banner — then a
       correct code still links. A silent failure here is a defect.
 
 ## 5. Hour-zero hardware spike — gates everything
 
-The moment the glasses are in hand: Debug → **"Run hour-zero spike (camera + display)"**. It opens ONE
+The moment the glasses are in hand: Session → Debug tools → **"Run hour-zero spike (camera + display)"**. It opens ONE
 `DeviceSession` with both camera stream and display, waits for a frame, and draws a hello-world card.
 
 - Result appears under the button: `SPIKE OK: …` (then confirm the card is actually on the lens),
@@ -140,15 +163,18 @@ grep -rn "INTEGRATION(X-MACHINE)" glassbridge --include='*.swift' --include='*.x
 ```
 glassbridge/Config.xcconfig:5
 glassbridge/DevHarness/harness.mjs:8
-glassbridge/Wingman/FrameSampler.swift:4
-glassbridge/Wingman/LinkClient.swift:3
-glassbridge/Wingman/Config.swift:3
-glassbridge/Wingman/CortexSocket.swift:4
-glassbridge/Wingman/Protocol.swift:3
-glassbridge/Wingman/StatusView.swift:4
-glassbridge/Wingman/BridgeController.swift:4
-glassbridge/Wingman/HudRenderer.swift:10
 glassbridge/Wingman/AudioKeepalive.swift:6
+glassbridge/Wingman/AuthManager.swift:5
+glassbridge/Wingman/BridgeController.swift:4
+glassbridge/Wingman/Config.swift:4
+glassbridge/Wingman/CortexClient.swift:5
+glassbridge/Wingman/CortexSocket.swift:4
+glassbridge/Wingman/FrameSampler.swift:4
+glassbridge/Wingman/HudRenderer.swift:10
+glassbridge/Wingman/LinkClient.swift:3
+glassbridge/Wingman/ProfileView.swift:4
+glassbridge/Wingman/Protocol.swift:3
+glassbridge/Wingman/SessionView.swift:5
 ```
 
 Deferred actions — `grep -rn "INTEGRATION-DAY" glassbridge --include='*.swift' --include='*.xcconfig' --include='*.mjs'`:
@@ -158,47 +184,72 @@ Config.xcconfig:8: human copies Config.local.xcconfig.example → Config.local.x
   and CORTEX_WS_URL with the real Fly URLs (keep the /ws/device path), sets DEVELOPMENT_TEAM, rebuilds
   onto the phone.
 DevHarness/harness.mjs:11: nothing to change here — stop using it: turn off "Use DevHarness" in
-  StatusView's Debug tools (it is off by default), or just paste a real Cortex URL in step 1.
-Wingman/Config.swift:6: no rebuild needed — paste the Fly host into StatusView's "Cortex URL" field and
-  tap Apply; the xcconfig stays the build-time default.
+  Session → Debug tools (it is off by default), or just paste a real Cortex URL there.
+Wingman/Config.swift:7: no rebuild needed — paste the Fly host into Session → Debug tools' "Cortex URL"
+  field and tap Apply; the xcconfig stays the build-time default.
 Wingman/CortexSocket.swift:7: swap DEV_HARNESS_URL for CORTEX_WS_URL — BridgeController does this as
-  soon as a Cortex URL is applied in step 1 (the "Use DevHarness" toggle lives in Debug tools and is off
-  by default). Then verify a `hello` with deviceType "glasses_bridge" arrives in Cortex logs after link.
+  soon as a Cortex URL is applied (the "Use DevHarness" toggle lives in Debug tools and is off by
+  default). Then verify a `hello` with deviceType "glasses_bridge" arrives in Cortex logs after link.
 ```
 
 Line numbers shift whenever a header changes — **re-run the greps** rather than trusting the numbers
 above. Drop `--include` to also see the plan doc.
 
-### Integration day (no rebuild)
+### Integration day — the in-app flow (no rebuild, no dashboard)
 
-Step 1 of StatusView reads top to bottom in the order you use it:
+The app is self-contained now: everything below happens on the phone, in order, with no console open.
 
-1. **Cortex URL** field + **Apply** (the prominent button until a URL is set). Paste the Fly host in any
-   shape the clipboard hands you — `wingman-cortex.fly.dev`, `https://wingman-cortex.fly.dev/`,
-   `wss://wingman-cortex.fly.dev/ws/device` — they all normalise to `https://<host>` +
-   `wss://<host>/ws/device`. `http://`/`ws://` stay insecure, so a laptop Cortex
-   (`http://192.168.1.5:8080`) works too; an empty field clears the override.
-2. The caption under it — **`Cortex · wss://…/ws/device`** (or `DevHarness · …`) — is the target actually
-   in use. Read it before linking.
-3. **6-digit code** from the dashboard + **Link**. Link stays disabled, with the hint *"Set the Cortex URL
-   first"*, until a URL is set: with no URL the app opens no socket at all rather than silently dialing a
-   placeholder.
-4. The **Linked · `<deviceId>`** pill (with Unlink), then the socket pill. Then **Start** in step 3.
+1. **Sign in.** Welcome screen → type your email → **Send code** → the six digits Clerk mails you →
+   **Verify**. The same button signs you *up* if there is no account yet (the app tries sign-in first
+   and falls through), so nobody has to pick. **Continue with Google** is one tap; *Other options*
+   opens Clerk's own sheet for passkeys/password/Apple.
+2. **The glasses link themselves.** The moment you are signed in, the app mints a link code as you
+   (`POST /api/devices/link-code`, Bearer) and spends it as this device
+   (`POST /api/devices/claim`, `deviceType: "glasses_bridge"`), then stores the returned `deviceToken`
+   in the Keychain and opens the socket. Nobody types six digits. If that fails (offline, Cortex down),
+   the **Glasses** tab shows a *Link now* button and the account menu has *Link these glasses*.
+3. **Profile tab.** *Choose PDF* → `fileImporter` → `POST /api/profile/resume` (one multipart part,
+   `resume.pdf`, `application/pdf`). Cortex parses it and the parsed name / headline / skill chips /
+   experience come straight back onto the screen — that round trip IS the acceptance check. Then the
+   four link fields (LinkedIn · X · GitHub · Website) and **Save links** (`PUT /api/profile/links`;
+   blank fields are omitted, never sent as `""`).
+4. **Glasses tab.** *Connect glasses* (brings up session + display + camera + hotspot), pills for
+   registration / connection / display / camera / hotspot, and *Force reconnect* for the hotspot-join
+   state that makes every later Connect fail.
+5. **Session tab.** One big **Start**, a replica of the card currently on the lens (same title /
+   subtitle / ≤5 lines / footer the renderer draws), the last frame sent, and the frames/battery/
+   session strip.
 
-Apply stores the value in `UserDefaults` (`cortexURLOverride`), turns DevHarness off and redials the
-socket. If you were linked to the DevHarness (`dev_harness`), applying a Cortex URL **auto-unlinks** —
-the harness token means nothing to Cortex — and says so: *"Harness link cleared — link with the dashboard
-code"*. `Config.local.xcconfig` remains the **build-time default**; the pasted value just wins over it,
-so a 7-day re-signing rebuild still comes up pointing at the right Cortex.
+The top bar carries the signed-in email, the link pill and **Sign out** (which also unlinks the device
+— the token belongs to the account that minted it).
+
+**Console still needed for two things only:** `/feed` (the window into what Cortex thinks the glasses
+are seeing) and a dashboard-initiated Start. The 6-digit code path did not disappear — it moved to
+**Session → Debug tools**, which is `#if DEBUG` and also holds the **Cortex URL** override, the
+DevHarness toggle, the hour-zero spike, test frames and the display playground.
+
+#### Cortex URL, when it changes (Session → Debug tools)
+
+Paste the Fly host in any shape the clipboard hands you — `wingman-cortex.fly.dev`,
+`https://wingman-cortex.fly.dev/`, `wss://wingman-cortex.fly.dev/ws/device` — they all normalise to
+`https://<host>` + `wss://<host>/ws/device`. `http://`/`ws://` stay insecure, so a laptop Cortex
+(`http://192.168.1.5:8080`) works too; an empty field clears the override. Apply stores it in
+`UserDefaults` (`cortexURLOverride`), turns DevHarness off and redials. If you were linked to the
+DevHarness (`dev_harness`), applying a Cortex URL **auto-unlinks** — the harness token means nothing
+to Cortex. `Config.local.xcconfig` stays the **build-time default**, so a 7-day re-signing rebuild
+still comes up pointing at the right Cortex.
+
+Profile and link calls always go to the **real** Cortex (`Config.cortexURL`), never the DevHarness: a
+profile belongs to a Clerk user, not to whichever socket the Debug toggle happens to be dialing.
 
 While streaming, the phone's Wi-Fi is the glasses' own hotspot, so Cortex traffic rides **cellular** —
 venue Wi-Fi is never used (and never worth debugging on the day).
 
-**Integration-day sequence (DESIGN_MAC.md §0.6, human-driven, ~15 min):** ① Windows side deploys Cortex
-→ human gets the `wss://…fly.dev` URL. ② Human pastes it into the app's **Cortex URL** field → Apply (no
-rebuild; `Config.local.xcconfig` is only the build-time default), and checks the caption reads
-`Cortex · wss://…`. ③ Dashboard shows the 6-digit link code → typed into GlassBridge →
-`/api/devices/claim`. ④ Start from either end → M2 checks (DESIGN.md §6).
+**Integration-day sequence (DESIGN_MAC.md §0.6, human-driven, ~10 min):** ① Windows side deploys
+Cortex → human gets the `https://…fly.dev` URL. ② If it differs from the build-time default, paste it
+into Session → Debug tools → Apply. ③ Sign in on the phone → the device links itself. ④ Upload the
+resume, save the links. ⑤ Connect the glasses → Start → M2 checks (DESIGN.md §6).
 
-Also needed from the Windows side (§3): the dashboard with the link code, and `/feed` as the window
-into what Cortex thinks the glasses are seeing. Until then, DevHarness is Cortex.
+Also needed from the Windows side (§3): `/feed`, as the window into what Cortex thinks the glasses
+are seeing. Until Cortex is up, DevHarness is Cortex — but it mints no Clerk JWT, so against the
+harness use the manual 6-digit path in Debug tools.

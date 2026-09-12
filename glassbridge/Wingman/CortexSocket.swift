@@ -4,7 +4,7 @@
 // INTEGRATION(X-MACHINE):
 // COUNTERPART: cortex/src/gateway/DeviceGateway.ts — WS upgrade on /ws/device + `?token=<deviceToken>` auth
 // CONTRACT: DESIGN.md §4.2 — up: hello, session_start, session_stop, frame, photo, photo_error, status; down: armed, capture_photo, render, session_end, error
-// AT-INTEGRATION: INTEGRATION-DAY: swap DEV_HARNESS_URL for CORTEX_WS_URL — BridgeController does this when Config.local.xcconfig holds a real URL and the StatusView "Use DevHarness" toggle is off. Then verify a `hello` with deviceType "glasses_bridge" arrives in Cortex logs after link.
+// AT-INTEGRATION: INTEGRATION-DAY: swap DEV_HARNESS_URL for CORTEX_WS_URL — BridgeController does this when Config.local.xcconfig holds a real URL and the Debug tools "Use DevHarness" toggle is off. Then verify a `hello` with deviceType "glasses_bridge" arrives in Cortex logs after link.
 //
 // INTEGRATION: CortexSocket
 // IN:  send(_:) from FrameSampler (frame/photo/photo_error) and BridgeController (session start/stop); batteryProvider for heartbeats
