@@ -107,7 +107,9 @@ final class BridgeController: ObservableObject {
   private var batteryObserver: NSObjectProtocol?
 
   init() {
-    useDevHarness = UserDefaults.standard.object(forKey: "useDevHarness") as? Bool ?? false
+    // The harness is a per-launch dev opt-in: never restore a stale `true` when a real Cortex URL is configured
+    // (a persisted toggle from a harness session would silently dial the dead tunnel and show "disconnected").
+    useDevHarness = Config.isCortexConfigured ? false : (UserDefaults.standard.object(forKey: "useDevHarness") as? Bool ?? false)
     keepLensAwake = UserDefaults.standard.object(forKey: "keepLensAwake") as? Bool ?? true
     if let id = Keychain.get(Keychain.deviceIdKey), Keychain.get(Keychain.deviceTokenKey) != nil { linkState = .linked(deviceId: id) }
     // FrameSampler invokes `send` on ITS OWN serial queue — hop to main before touching any state here.
