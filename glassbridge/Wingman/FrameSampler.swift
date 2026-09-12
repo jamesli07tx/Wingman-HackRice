@@ -50,45 +50,69 @@ enum FrameEncoder {
     guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
     return CGImageSourceCreateImageAtIndex(src, 0, nil)
   }
+
+  /// Decode straight to ≤ maxEdge. Two reasons this is not decode() + scaled() for photos:
+  /// a 12 MP capture is never materialized at full size (ImageIO scales while decoding), and
+  /// `WithTransform` bakes in the EXIF orientation tag — otherwise Cortex gets sideways documents,
+  /// because a raw CGImage carries no orientation and jpeg() cannot re-attach one.
+  static func downsampled(_ data: Data, maxEdge: Int) -> CGImage? {
+    guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+    return CGImageSourceCreateThumbnailAtIndex(src, 0, [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceThumbnailMaxPixelSize: maxEdge,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+    ] as CFDictionary)
+  }
 }
 
 final class FrameSampler {
-  private(set) var config: ArmedConfig
-  private(set) var seq = 0
-  private(set) var isRunning = false
+  // All mutable state is owned by `queue`; the underscored vars are only ever touched inside it.
+  private var _config: ArmedConfig
+  private var _seq = 0
+  private var _isRunning = false
   private let send: (DeviceToCortex) -> Void
   private let queue = DispatchQueue(label: "wingman.framesampler", qos: .userInitiated)
   private var lastEmit = Date.distantPast
 
+  // Read-only snapshots, hopped onto the sampler queue so callers on any thread see consistent values.
+  // These and drain() must NEVER be called from inside the `send` closure — send already runs on the
+  // sampler queue, so a queue.sync from there deadlocks. Read `config`/`seq` before or after, not during.
+  var config: ArmedConfig { queue.sync { _config } }
+  var seq: Int { queue.sync { _seq } }
+  var isRunning: Bool { queue.sync { _isRunning } }
+
   init(config: ArmedConfig = .defaults, send: @escaping (DeviceToCortex) -> Void) {
-    self.config = config
+    self._config = config
     self.send = send
   }
 
   /// Server-authoritative override (armed.config). Takes effect for the next frame.
-  func apply(_ config: ArmedConfig) { queue.async { self.config = config } }
+  func apply(_ config: ArmedConfig) { queue.async { self._config = config } }
 
-  func start() { queue.async { self.isRunning = true; self.lastEmit = .distantPast } }
-  func stop() { queue.async { self.isRunning = false } }
+  func start() { queue.async { self._isRunning = true; self.lastEmit = .distantPast } }
+  func stop() { queue.async { self._isRunning = false } }
 
   /// Offer every incoming frame; at most one per frameIntervalMs is encoded and sent, the rest are dropped.
   /// Encoding happens on the sampler queue — never on the caller's (DAT) thread or main.
   func offer(_ image: CGImage, now: Date = Date()) {
     queue.async {
-      guard self.isRunning,
-            now.timeIntervalSince(self.lastEmit) * 1000 >= Double(self.config.frameIntervalMs) else { return }
+      guard self._isRunning,
+            now.timeIntervalSince(self.lastEmit) * 1000 >= Double(self._config.frameIntervalMs) else { return }
       self.lastEmit = now
-      guard let data = FrameEncoder.encodeFrame(image, maxEdge: self.config.frameMaxEdgePx) else { return }
-      self.seq += 1
-      self.send(.frame(seq: self.seq, ts: Int64(now.timeIntervalSince1970 * 1000), dataBase64: data.base64EncodedString()))
+      guard let data = FrameEncoder.encodeFrame(image, maxEdge: self._config.frameMaxEdgePx) else { return }
+      self._seq += 1
+      self.send(.frame(seq: self._seq, ts: Int64(now.timeIntervalSince1970 * 1000), dataBase64: data.base64EncodedString()))
     }
   }
 
   /// Full-res capture from DAT → ≤ docMaxEdgePx, JPEG q≈0.8 → `photo` (DESIGN.md §4.2); undecodable → `photo_error`.
+  /// Downsamples straight from the JPEG bytes so the full-res bitmap is never materialized and EXIF orientation survives.
   func handlePhoto(reqId: String, data: Data) {
     queue.async {
-      guard let img = FrameEncoder.decode(data) else { return self.send(.photoError(reqId: reqId, reason: "decode_failed")) }
-      guard let out = FrameEncoder.encodeFrame(img, maxEdge: self.config.docMaxEdgePx, quality: 0.8) else {
+      guard let img = FrameEncoder.downsampled(data, maxEdge: self._config.docMaxEdgePx) else {
+        return self.send(.photoError(reqId: reqId, reason: "decode_failed"))
+      }
+      guard let out = FrameEncoder.jpeg(img, quality: 0.8) else {
         return self.send(.photoError(reqId: reqId, reason: "encode_failed"))
       }
       self.send(.photo(reqId: reqId, dataBase64: out.base64EncodedString()))

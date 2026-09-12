@@ -1,5 +1,7 @@
 import XCTest
 import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 #if canImport(WingmanCore)
 @testable import WingmanCore
 #else
@@ -20,6 +22,16 @@ final class FrameSamplerTests: XCTestCase {
     ctx.setFillColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1)
     for i in 0..<12 { ctx.fill(CGRect(x: 20 + i * (width / 14), y: height / 3, width: width / 30, height: height / 6)) }
     return ctx.makeImage()!
+  }
+
+  /// A JPEG carrying an EXIF orientation tag — what a real glasses/phone capture looks like on the wire.
+  static func makeJPEG(width: Int, height: Int, orientation: Int) -> Data {
+    let out = NSMutableData()
+    let dest = CGImageDestinationCreateWithData(out, UTType.jpeg.identifier as CFString, 1, nil)!
+    CGImageDestinationAddImage(dest, makeImage(width: width, height: height),
+                               [kCGImagePropertyOrientation: orientation] as CFDictionary)
+    XCTAssertTrue(CGImageDestinationFinalize(dest))
+    return out as Data
   }
 
   func testScaledLongestEdgeIs768AndAspectKept() {
@@ -44,7 +56,10 @@ final class FrameSamplerTests: XCTestCase {
 
   func testOfferRespectsCadenceAndIncrementsSeq() {
     var sent: [DeviceToCortex] = []
-    let sampler = FrameSampler(config: .defaults) { sent.append($0) }
+    let sampler = FrameSampler(config: .defaults) {
+      XCTAssertFalse(Thread.isMainThread, "send must run on the sampler queue, never main")
+      sent.append($0)
+    }
     sampler.start()
     let t0 = Date()
     let img = Self.makeImage(width: 640, height: 360)
@@ -76,6 +91,24 @@ final class FrameSamplerTests: XCTestCase {
     let sampler = FrameSampler { sent.append($0) }
     sampler.offer(Self.makeImage(width: 64, height: 64)); sampler.drain()
     XCTAssertTrue(sent.isEmpty)
+  }
+
+  func testStopAfterStartDropsFrames() {
+    var sent: [DeviceToCortex] = []
+    let sampler = FrameSampler { sent.append($0) }
+    sampler.start(); sampler.stop()
+    sampler.offer(Self.makeImage(width: 64, height: 64)); sampler.drain()
+    XCTAssertTrue(sent.isEmpty)
+    XCTAssertFalse(sampler.isRunning)
+  }
+
+  func testDownsampledAppliesExifOrientation() throws {
+    // Orientation 6 = rotate 90° CW for display, so a stored 400×200 landscape is really a 200×400 portrait.
+    let data = Self.makeJPEG(width: 400, height: 200, orientation: 6)
+    let raw = try XCTUnwrap(FrameEncoder.decode(data))
+    XCTAssertEqual(raw.width, 400); XCTAssertEqual(raw.height, 200)   // decode() ignores the tag — the bug being fixed
+    let out = try XCTUnwrap(FrameEncoder.downsampled(data, maxEdge: 2048))
+    XCTAssertEqual(out.width, 200); XCTAssertEqual(out.height, 400)   // downsampled() bakes the transform in
   }
 
   func testHandlePhotoDownscalesToDocEdgeAndEmitsPhoto() throws {
