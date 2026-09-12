@@ -7,8 +7,8 @@
 // AT-INTEGRATION: on every `armed` this logs "armed.config: compiled=<defaults> received=<config>" — verify the received values win (DESIGN_MAC.md required site for FrameSampler/HudRenderer).
 //
 // INTEGRATION: BridgeController
-// IN:  RootView actions (sign in/resume/links/connect/disconnect/start/stop/spike/toggles); CortexSocket.onMessage; DATSessionManager.onFrame/onPhoto
-// OUT: FrameSampler.offer/handlePhoto, HudRenderer.render, AudioKeepalive.start/stop, published state for RootView's screens
+// IN:  RootView actions (sign in/resume/links/connect/disconnect/start/stop/spike/toggles); CortexSocket.onMessage; DashboardSocket.onEvent; DATSessionManager.onFrame/onPhoto
+// OUT: FrameSampler.offer/handlePhoto, HudRenderer.render, AudioKeepalive.start/stop, published state (including the §4.3 `feed`) for RootView's screens
 // WIRE: one instance created by App.swift as a @StateObject, AFTER DATSessionManager.configure()
 
 import Foundation
@@ -44,6 +44,12 @@ final class BridgeController: ObservableObject {
   @Published private(set) var framesSent = 0
   /// The last JPEG handed to Cortex, decoded for the phone screen ("what the glasses see").
   @Published private(set) var lastFrame: UIImage?
+  /// The Cortex-side telemetry timeline (DESIGN.md §4.3), newest first, capped at 200 — the Feed tab.
+  @Published private(set) var feed: [FeedItem] = []
+  /// This session's tally: what went up, and what Cortex said about it.
+  @Published private(set) var gateStats = GateStats()
+  @Published private(set) var lastGate: (gateClass: GateClass?, orgHint: String?, at: Date)?
+  @Published private(set) var dashboardState: DashboardSocket.State = .disconnected
   @Published private(set) var spikeResult: String?
   @Published private(set) var spikeRunning = false
   /// connectGlasses() is in flight — GlassesView disables the button and spins.
@@ -83,6 +89,12 @@ final class BridgeController: ObservableObject {
   let dat: DATSessionManager? = DATSessionManager.isConfigured ? DATSessionManager() : nil
   #endif
   private var socket: CortexSocket?
+  private var dashboard: DashboardSocket?
+  /// The last 60 frames we sent, by seq, so a gate event can show the frame it judged and its latency.
+  private var sentFrames: [Int: (image: UIImage, at: Date)] = [:]
+  private var sentOrder: [Int] = []
+  /// When this armed session's first frame went up — the "no gate results" diagnostic dates from it.
+  private var firstFrameAt: Date?
   private var sampler: FrameSampler!
   private var renderer: HudRendererBox?
   private let keepalive = AudioKeepalive()
@@ -121,7 +133,20 @@ final class BridgeController: ObservableObject {
       Task { @MainActor in
         guard let self else { return }
         self.socket?.send(msg)
-        if case .frame = msg { self.framesSent += 1; if let preview { self.lastFrame = preview } }
+        switch msg {
+        case let .frame(seq, _, _):
+          self.framesSent += 1
+          self.gateStats.frames += 1
+          if self.firstFrameAt == nil { self.firstFrameAt = Date() }
+          if let preview { self.lastFrame = preview; self.remember(preview, seq: seq) }
+        case let .photo(reqId, b64):
+          self.push(.init(kind: .info, title: "capture_photo \(reqId) → photo sent",
+                          detail: "\(max(1, b64.count * 3 / 4 / 1024)) KB", tint: .accent))
+        case let .photoError(reqId, reason):
+          self.push(.init(kind: .info, title: "photo_error \(reqId)", detail: reason, tint: .danger))
+        default:
+          break
+        }
       }
     }
     sampler = s
@@ -149,6 +174,7 @@ final class BridgeController: ObservableObject {
         Task { @MainActor in self?.refreshBattery() }
       }
     reconnectIfLinked()
+    syncDashboard()      // Clerk may already be signed in here, in which case no auth change ever fires
     // Registered last (all stored properties initialized). Cuts the reconnect backoff short after an unlock.
     foregroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
       Task { @MainActor in
@@ -160,6 +186,7 @@ final class BridgeController: ObservableObject {
 
   deinit {
     socket?.disconnect()
+    dashboard?.disconnect()
     if let o = batteryObserver { NotificationCenter.default.removeObserver(o) }
   }
 
@@ -187,6 +214,7 @@ final class BridgeController: ObservableObject {
     // A real Cortex URL means we are not talking to the harness. Assigning useDevHarness unconditionally would
     // re-run its didSet (which stops an armed session), so only touch it when it actually changes.
     if useDevHarness { useDevHarness = false } else { reconnectIfLinked() }
+    syncDashboard()              // the dashboard always follows the REAL Cortex, never the harness
     if droppedHarnessLink { cortexHint = "Harness link cleared — link with the dashboard code" }
   }
 
@@ -235,6 +263,7 @@ final class BridgeController: ObservableObject {
     let signedIn = auth.isSignedIn
     guard signedIn != wasSignedIn else { return }
     wasSignedIn = signedIn
+    syncDashboard()              // up on sign-in, down on sign-out
     guard signedIn else { return }
     Task {
       await refreshProfile()
@@ -329,6 +358,94 @@ final class BridgeController: ObservableObject {
     s.connect()
     socket = s
   }
+
+  // MARK: feed (DESIGN.md §4.3) — one timeline of what we sent and what Cortex made of it
+
+  private func push(_ item: FeedItem) {
+    feed.insert(item, at: 0)
+    if feed.count > 200 { feed.removeLast(feed.count - 200) }
+  }
+
+  /// Ring buffer, 60 frames ≈ 105 s at the default cadence — long enough for any gate round trip.
+  private func remember(_ image: UIImage, seq: Int) {
+    sentFrames[seq] = (image, Date())
+    sentOrder.append(seq)
+    while sentOrder.count > 60 { sentFrames.removeValue(forKey: sentOrder.removeFirst()) }
+  }
+
+  func clearFeed() {
+    feed.removeAll()
+    gateStats = GateStats()
+    lastGate = nil
+  }
+
+  /// Frames are going up and nothing is coming back — the one diagnosis the Feed exists to make.
+  /// Recomputed on every publish (a frame ticks ~every 1.75 s), so it needs no timer of its own.
+  var gateSilent: Bool {
+    guard armed, gateStats.frames >= 5, gateStats.gated == 0, let since = firstFrameAt else { return false }
+    return -since.timeIntervalSinceNow > 10
+  }
+
+  // MARK: dashboard socket (DESIGN.md §4.3) — read-only, and independent of Start/Stop
+  //
+  // Alive for as long as the sign-in is: gate telemetry is how you learn Cortex is NOT seeing what you
+  // send, and that is exactly the moment nobody has pressed Start yet. Always the REAL Cortex — the
+  // DevHarness serves no /ws/dashboard.
+
+  /// The device socket URL with its path swapped: wss://host/ws/device → wss://host/ws/dashboard.
+  static var dashboardURL: URL? {
+    var c = URLComponents(url: Config.cortexWSURL, resolvingAgainstBaseURL: false)
+    c?.path = "/ws/dashboard"
+    c?.query = nil
+    return c?.url
+  }
+
+  private func syncDashboard() {
+    dashboard?.disconnect(); dashboard = nil
+    dashboardState = .disconnected
+    guard auth.isSignedIn, Config.isCortexConfigured, let url = Self.dashboardURL else { return }
+    let d = DashboardSocket(url: url, tokenProvider: { [auth] in try await auth.token() })
+    d.onState = { [weak self] s in self?.dashboardState = s }
+    d.onEvent = { [weak self] e in self?.handleDashboard(e) }
+    d.connect()
+    dashboard = d
+  }
+
+  private func handleDashboard(_ event: DashboardEvent) {
+    switch event {
+    case let .gate(_, frameSeq, gateClass, orgHint):
+      gateStats.gated += 1
+      switch gateClass {
+      case .banner: gateStats.banner += 1
+      case .document: gateStats.document += 1
+      case .nothing, nil: gateStats.nothing += 1
+      }
+      lastGate = (gateClass, orgHint, Date())
+      let sent = sentFrames[frameSeq]
+      push(FeedItem(kind: .gate, frameSeq: frameSeq, thumbnail: sent?.image,
+                    title: [gateClass?.rawValue ?? "unknown", orgHint].compactMap { $0 }.joined(separator: " · "),
+                    detail: sent.map { String(format: "%.1f s", -$0.at.timeIntervalSinceNow) },
+                    tint: FeedTint(gateClass)))
+    case let .silencedIdentify(_, nameGuess, confidence):
+      push(FeedItem(kind: .identify,
+                    title: "Guess: \(nameGuess ?? "unknown") · \(percent(confidence)) · silenced (< \(percent(DashboardEvent.confThreshold)))",
+                    detail: "below threshold — nothing reached the lens", tint: .warn))
+    case let .render(_, card):
+      push(FeedItem(kind: .render, title: "→ lens: \(card.kind.rawValue) · \(card.title) (#\(card.seq))",
+                    detail: card.subtitle, tint: .accent))
+    case let .session(_, state, reason):
+      push(FeedItem(kind: .session, title: "session \(state)", detail: reason?.rawValue,
+                    tint: state == "started" ? .ok : .muted))
+    case let .status(_, battery, note):
+      let parts = [battery.map { "battery \(percent($0))" }, note].compactMap { $0 }
+      push(FeedItem(kind: .status, title: "status", detail: parts.isEmpty ? nil : parts.joined(separator: " · "),
+                    tint: .muted))
+    case let .unknown(type):
+      push(FeedItem(kind: .info, title: "unknown event: \(type)", tint: .muted))
+    }
+  }
+
+  private func percent(_ v: Double) -> String { "\(Int((v * 100).rounded()))%" }
 
   // MARK: glasses connection (hardware session — independent of any Cortex session)
   //
@@ -466,10 +583,12 @@ final class BridgeController: ObservableObject {
     guard cortexConfigured else { cortexHint = "Set the Cortex URL first"; return }
     guard socket != nil else { lastError = "Link the device first"; return }
     socket?.startSession()          // Cortex answers with `armed` → arm() does the hardware work
+    push(FeedItem(kind: .info, title: "session_start sent", tint: .ok))
   }
 
   func stop() {
     socket?.stopSession()
+    push(FeedItem(kind: .info, title: "session_stop sent", tint: .muted))
     disarm()
   }
 
@@ -496,6 +615,11 @@ final class BridgeController: ObservableObject {
 
     sessionId = newSessionId
     armed = true
+    gateStats = GateStats()
+    firstFrameAt = nil
+    push(FeedItem(kind: .info, title: "armed \(newSessionId)",
+                  detail: "every \(cfg.frameIntervalMs) ms · \(cfg.frameMaxEdgePx) px · render gap \(cfg.renderMinGapMs) ms",
+                  tint: .ok))
     sampler.apply(cfg)
     sampler.start()
     keepalive.start()
@@ -608,6 +732,7 @@ final class BridgeController: ObservableObject {
     awakeTimer?.invalidate(); awakeTimer = nil
     armed = false
     sessionId = nil
+    firstFrameAt = nil
     pendingPhotoReqIds.removeAll()
     sampler.stop()
     #if canImport(MWDATCore)
@@ -645,6 +770,7 @@ final class BridgeController: ObservableObject {
       disarm()
     case let .error(code, message, recoverable):
       lastError = "\(code.rawValue): \(message)\(recoverable ? "" : " (fatal)")"
+      push(FeedItem(kind: .info, title: code.rawValue, detail: message, tint: .danger))
     case let .unknown(type):
       NSLog("ignoring unknown message type \(type)")
     }
@@ -802,6 +928,42 @@ final class BridgeController: ObservableObject {
     return r
   }
   #endif
+}
+
+/// One row of the Feed tab: a local event we caused, or a DashboardEvent Cortex published about it.
+struct FeedItem: Identifiable {
+  enum Kind { case gate, identify, render, session, status, info }
+
+  let id = UUID()
+  var time = Date()
+  var kind: Kind
+  /// Set on gate rows — the frame Cortex judged, which is also how the thumbnail was found.
+  var frameSeq: Int?
+  var thumbnail: UIImage?
+  var title: String
+  var detail: String?
+  var tint: FeedTint
+}
+
+/// Row accent, resolved to a Theme colour by FeedView (this file knows nothing about SwiftUI).
+enum FeedTint { case accent, warn, muted, ok, danger
+
+  init(_ gateClass: GateClass?) {
+    switch gateClass {
+    case .banner: self = .accent
+    case .document: self = .warn
+    default: self = .muted
+    }
+  }
+}
+
+/// What went up this session, and what Cortex made of it.
+struct GateStats: Equatable {
+  var frames = 0
+  var gated = 0
+  var banner = 0
+  var document = 0
+  var nothing = 0
 }
 
 /// Thin wrapper so BridgeController compiles when MWDATDisplay is absent (the iOS target always links it, but keep the seam explicit).

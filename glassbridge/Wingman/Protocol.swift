@@ -2,7 +2,7 @@
 //
 // INTEGRATION(X-MACHINE):
 // COUNTERPART: shared/src/protocol.ts (Windows side; cortex DeviceGateway encodes/decodes these exact shapes)
-// CONTRACT: DESIGN.md §4.2 — device WebSocket messages, HudCard, ErrorCode, armed.config; §4.1 — POST /api/devices/claim
+// CONTRACT: DESIGN.md §4.2 — device WebSocket messages, HudCard, ErrorCode, armed.config; §4.1 — POST /api/devices/claim; §4.3 — DashboardEvent
 // AT-INTEGRATION: nothing — transcribed from DESIGN.md §4.2, v2 frozen 2026-09-12; never resynced from cortex/ source.
 //   Any post-freeze contract change needs human sign-off plus matching manual edits here AND in shared/src/protocol.ts.
 //
@@ -166,6 +166,61 @@ extension CortexToDevice: Decodable {
   }
 }
 
+// MARK: - Dashboard WebSocket (DESIGN.md §4.3) — read-only mirror + gate telemetry
+//
+// Decoded as leniently as CortexToDevice: an unknown `type` becomes `.unknown`, and an unknown gate
+// `class` becomes a nil `gateClass` rather than a thrown error — a Cortex that grows a sixth class
+// must degrade one row of the Feed, never blank the whole timeline.
+
+enum GateClass: String, Decodable, Equatable { case banner, document, nothing }
+
+enum DashboardEvent: Decodable, Equatable {
+  case render(sessionId: String, card: HudCard)
+  case status(sessionId: String, battery: Double?, note: String?)
+  case gate(sessionId: String, frameSeq: Int, gateClass: GateClass?, orgHint: String?)
+  case silencedIdentify(sessionId: String, nameGuess: String?, confidence: Double)
+  case session(sessionId: String, state: String, reason: SessionEndReason?)
+  /// A `type` this build does not know — shown as one grey row, never fatal.
+  case unknown(type: String)
+
+  /// shared/src/constants.ts CONF_THRESHOLD — under this the lens silences an identification (D13).
+  static let confThreshold = 0.6
+
+  private enum Key: String, CodingKey {
+    case type, sessionId, card, battery, note, frameSeq, `class`, orgHint, nameGuess, confidence, state, reason
+  }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: Key.self)
+    let type = try c.decode(String.self, forKey: .type)
+    // Diagnostics, not control: a missing sessionId must not cost us the row.
+    let sessionId = (try? c.decode(String.self, forKey: .sessionId)) ?? ""
+    switch type {
+    case "render":
+      self = .render(sessionId: sessionId, card: try c.decode(HudCard.self, forKey: .card))
+    case "status":
+      self = .status(sessionId: sessionId,
+                     battery: try c.decodeIfPresent(Double.self, forKey: .battery),
+                     note: try c.decodeIfPresent(String.self, forKey: .note))
+    case "gate":
+      self = .gate(sessionId: sessionId,
+                   frameSeq: try c.decode(Int.self, forKey: .frameSeq),
+                   gateClass: (try? c.decode(String.self, forKey: .class)).flatMap(GateClass.init(rawValue:)),
+                   orgHint: try c.decodeIfPresent(String.self, forKey: .orgHint))
+    case "silenced_identify":
+      self = .silencedIdentify(sessionId: sessionId,
+                               nameGuess: try c.decodeIfPresent(String.self, forKey: .nameGuess),
+                               confidence: try c.decodeIfPresent(Double.self, forKey: .confidence) ?? 0)
+    case "session":
+      self = .session(sessionId: sessionId,
+                      state: try c.decode(String.self, forKey: .state),
+                      reason: try? c.decode(SessionEndReason.self, forKey: .reason))
+    default:
+      self = .unknown(type: type)
+    }
+  }
+}
+
 // MARK: - REST DTOs (DESIGN.md §4.1)
 //
 // Decoded LENIENTLY — every field is optional. Cortex answers GET /api/profile with
@@ -248,5 +303,9 @@ enum Wire {
 
   static func decode(_ text: String) throws -> CortexToDevice {
     try decoder.decode(CortexToDevice.self, from: Data(text.utf8))
+  }
+
+  static func decodeDashboard(_ text: String) throws -> DashboardEvent {
+    try decoder.decode(DashboardEvent.self, from: Data(text.utf8))
   }
 }

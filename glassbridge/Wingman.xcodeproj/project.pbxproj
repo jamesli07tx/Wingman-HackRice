@@ -17,13 +17,17 @@
 		28EFD650701818507AD3479B /* LinkClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC25DB79E1DE6F8F326AF89 /* LinkClient.swift */; };
 		2D15653EBD475A19CD4B599F /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3A06EC881660F69955A32CF4 /* MWDATCore */; };
 		439BCBEA8EA2A7A130F82AA0 /* ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D346CE90D2263A955B0548 /* ConfigTests.swift */; };
+		43D86622E8D523E13848D2B8 /* DashboardEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEDD7B164D2859EA41DFCF46 /* DashboardEventTests.swift */; };
+		46EC044005BE2F03E6908C61 /* DashboardSocketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6005F41AAD9ECDD5FBB4D399 /* DashboardSocketTests.swift */; };
 		5991DB0D1B49D041A4AB1F48 /* HudRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0B19928FD4A4A9D1E5BA67 /* HudRenderer.swift */; };
 		644749E5C2D9FD9134F00B15 /* HEVCFrameDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB6997088320169560A4446B /* HEVCFrameDecoder.swift */; };
 		6E327B0C3711E94CF987960A /* BridgeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */; };
+		7518759928AD959314A3D9DB /* DashboardSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8F857CE16098632A7E46769 /* DashboardSocket.swift */; };
 		76564B63A6D47792D9D7434B /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 147E9897F23483D7BC47423B /* ProfileView.swift */; };
 		77A9F5FB014A699F5E98461C /* MWDATDisplay in Frameworks */ = {isa = PBXBuildFile; productRef = 051F88B26B24B66896A7301A /* MWDATDisplay */; };
 		77B81B9A698D2B364BF354FD /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = A06F8EE34AF087872DB5F46C /* ClerkKit */; };
 		7811386F5ADEAB7B3C1E1E12 /* FrameSamplerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F99647213394E553B9B06A1 /* FrameSamplerTests.swift */; };
+		7AAF579CC03BE5F5D57B2D5A /* FeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDC2B9375DE1561B6B31EC54 /* FeedView.swift */; };
 		7AE3868FED6F5D978CACF325 /* FrameSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B905996BC4B5066EF1676CE4 /* FrameSampler.swift */; };
 		7B95AC42F2B040925A25E17D /* CortexSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00B1743B6CEFEFAD09B8640D /* CortexSocket.swift */; };
 		83FC20D913FEF067839B92EE /* DATSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4E2559DD38650D0279ED945 /* DATSessionManager.swift */; };
@@ -37,6 +41,7 @@
 		B1247B78B2908D8A301D708C /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21C50607EFEF51382155EA3 /* App.swift */; };
 		C4C7DF71DF3737ABF1EC8B58 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59079017CB797CC1FD7934C1 /* Theme.swift */; };
 		CA0851CAD480B2847702EAA3 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AC756E39375A0CB772C5EE /* RootView.swift */; };
+		D8A543D63BBEE7FD254900A5 /* TestWSServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFB2B79FAF0AE703C81EEC0B /* TestWSServer.swift */; };
 		E0D042DE9157B542BE4DBD45 /* AudioKeepalive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91E1F270FDCD149BDB64A530 /* AudioKeepalive.swift */; };
 		E0D79558D27AB1B1701D850D /* TestImports.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B999F287269B7E1837BD035 /* TestImports.swift */; };
 		E745F43A777292E86588A26D /* MWDATCamera in Frameworks */ = {isa = PBXBuildFile; productRef = 57B63325D7E952950D95B12B /* MWDATCamera */; };
@@ -68,6 +73,7 @@
 		5607700DD17E6A6DDCAE169E /* CortexClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CortexClientTests.swift; sourceTree = "<group>"; };
 		59079017CB797CC1FD7934C1 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		5B999F287269B7E1837BD035 /* TestImports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestImports.swift; sourceTree = "<group>"; };
+		6005F41AAD9ECDD5FBB4D399 /* DashboardSocketTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardSocketTests.swift; sourceTree = "<group>"; };
 		67A6EAB01D39726A587B6D33 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		82BF2E26970C2A88BEA11D29 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		86E2FB8D175F61D4C454B1C4 /* HudRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HudRendererTests.swift; sourceTree = "<group>"; };
@@ -80,15 +86,19 @@
 		AB0B19928FD4A4A9D1E5BA67 /* HudRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HudRenderer.swift; sourceTree = "<group>"; };
 		B905996BC4B5066EF1676CE4 /* FrameSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSampler.swift; sourceTree = "<group>"; };
 		CB6997088320169560A4446B /* HEVCFrameDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HEVCFrameDecoder.swift; sourceTree = "<group>"; };
+		CFB2B79FAF0AE703C81EEC0B /* TestWSServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestWSServer.swift; sourceTree = "<group>"; };
 		D5356FBA7A2E6D82EF5C62BE /* DisplayPlayground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayPlayground.swift; sourceTree = "<group>"; };
+		D8F857CE16098632A7E46769 /* DashboardSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardSocket.swift; sourceTree = "<group>"; };
 		DCC25DB79E1DE6F8F326AF89 /* LinkClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkClient.swift; sourceTree = "<group>"; };
+		DDC2B9375DE1561B6B31EC54 /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
 		E21C50607EFEF51382155EA3 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		E5AC756E39375A0CB772C5EE /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		E811D31B8CD3F96FA48E11A3 /* CortexClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CortexClient.swift; sourceTree = "<group>"; };
 		E926012BE836036C231BE0FE /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
+		EEDD7B164D2859EA41DFCF46 /* DashboardEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardEventTests.swift; sourceTree = "<group>"; };
 		F2FE628C0697A064C96F62AF /* Wingman.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Wingman.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeController.swift; sourceTree = "<group>"; };
-		"TEMP_B15EF33F-6262-471A-9838-2BBAAACB0D12" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		"TEMP_585AA792-BF6D-40E3-9E62-7F6FE0B90684" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -114,11 +124,14 @@
 				45D346CE90D2263A955B0548 /* ConfigTests.swift */,
 				5607700DD17E6A6DDCAE169E /* CortexClientTests.swift */,
 				9133B46962B158E4F2E3A993 /* CortexSocketTests.swift */,
+				EEDD7B164D2859EA41DFCF46 /* DashboardEventTests.swift */,
+				6005F41AAD9ECDD5FBB4D399 /* DashboardSocketTests.swift */,
 				3F99647213394E553B9B06A1 /* FrameSamplerTests.swift */,
 				86E2FB8D175F61D4C454B1C4 /* HudRendererTests.swift */,
 				8BAA48A486D131CD46686C35 /* ProtocolTests.swift */,
 				1C5F67BFF1CFE221F3B5CEFB /* SilentWavTests.swift */,
 				5B999F287269B7E1837BD035 /* TestImports.swift */,
+				CFB2B79FAF0AE703C81EEC0B /* TestWSServer.swift */,
 			);
 			path = WingmanTests;
 			sourceTree = "<group>";
@@ -143,8 +156,10 @@
 				143BCCD11C10823E0FE76773 /* Config.swift */,
 				E811D31B8CD3F96FA48E11A3 /* CortexClient.swift */,
 				00B1743B6CEFEFAD09B8640D /* CortexSocket.swift */,
+				D8F857CE16098632A7E46769 /* DashboardSocket.swift */,
 				A4E2559DD38650D0279ED945 /* DATSessionManager.swift */,
 				D5356FBA7A2E6D82EF5C62BE /* DisplayPlayground.swift */,
+				DDC2B9375DE1561B6B31EC54 /* FeedView.swift */,
 				B905996BC4B5066EF1676CE4 /* FrameSampler.swift */,
 				05D4E1FAB9EA65E4F41B7783 /* GlassesView.swift */,
 				CB6997088320169560A4446B /* HEVCFrameDecoder.swift */,
@@ -170,10 +185,10 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		"TEMP_2A0C61F3-24E5-4373-9B53-113F5D7B3BAA" /* glassbridge */ = {
+		"TEMP_57B8933C-863C-4062-A165-E9B6DCCD36AB" /* glassbridge */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_B15EF33F-6262-471A-9838-2BBAAACB0D12" /* Config.xcconfig */,
+				"TEMP_585AA792-BF6D-40E3-9E62-7F6FE0B90684" /* Config.xcconfig */,
 			);
 			path = glassbridge;
 			sourceTree = "<group>";
@@ -291,7 +306,9 @@
 				8AB4D88FC5B5143D166CAE20 /* CortexClient.swift in Sources */,
 				7B95AC42F2B040925A25E17D /* CortexSocket.swift in Sources */,
 				83FC20D913FEF067839B92EE /* DATSessionManager.swift in Sources */,
+				7518759928AD959314A3D9DB /* DashboardSocket.swift in Sources */,
 				94A55F19892E0228951A58C5 /* DisplayPlayground.swift in Sources */,
+				7AAF579CC03BE5F5D57B2D5A /* FeedView.swift in Sources */,
 				7AE3868FED6F5D978CACF325 /* FrameSampler.swift in Sources */,
 				94F55887EF592797B1435F61 /* GlassesView.swift in Sources */,
 				644749E5C2D9FD9134F00B15 /* HEVCFrameDecoder.swift in Sources */,
@@ -314,11 +331,14 @@
 				439BCBEA8EA2A7A130F82AA0 /* ConfigTests.swift in Sources */,
 				1709CB3FAB4F0AF4831B12CC /* CortexClientTests.swift in Sources */,
 				987862019755A7A14601D102 /* CortexSocketTests.swift in Sources */,
+				43D86622E8D523E13848D2B8 /* DashboardEventTests.swift in Sources */,
+				46EC044005BE2F03E6908C61 /* DashboardSocketTests.swift in Sources */,
 				7811386F5ADEAB7B3C1E1E12 /* FrameSamplerTests.swift in Sources */,
 				892E9DC02C8888FC6C4FCBA3 /* HudRendererTests.swift in Sources */,
 				EC7C75E268EA6301D25682CA /* ProtocolTests.swift in Sources */,
 				EFBBD2EFDC0D09C7FDA5EFB0 /* SilentWavTests.swift in Sources */,
 				E0D79558D27AB1B1701D850D /* TestImports.swift in Sources */,
+				D8A543D63BBEE7FD254900A5 /* TestWSServer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -392,7 +412,7 @@
 		};
 		9D6513D9C82CCE7BD3D4DAB1 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_B15EF33F-6262-471A-9838-2BBAAACB0D12" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_585AA792-BF6D-40E3-9E62-7F6FE0B90684" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -457,7 +477,7 @@
 		};
 		DABFDCF87C106D2CAF6C5A18 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_B15EF33F-6262-471A-9838-2BBAAACB0D12" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_585AA792-BF6D-40E3-9E62-7F6FE0B90684" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;

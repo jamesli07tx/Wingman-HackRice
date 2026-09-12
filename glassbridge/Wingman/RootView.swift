@@ -1,5 +1,5 @@
 // RootView.swift — the flow switch, and the only place that decides which screen you are on.
-// Not signed in → WelcomeView. Signed in → a three-tab product (Profile · Glasses · Session) under a
+// Not signed in → WelcomeView. Signed in → a four-tab product (Profile · Glasses · Session · Feed) under a
 // persistent bar carrying the account email, the link pill and the sign-out menu.
 //
 // INTEGRATION: RootView
@@ -41,6 +41,7 @@ struct RootView: View {
         tab(ProfileView(), "Profile", "person.text.rectangle")
         tab(GlassesView(), "Glasses", "eyeglasses")
         tab(SessionView(), "Session", "play.circle")
+        tab(FeedView(), "Feed", "waveform.path.ecg")
       }
       .tint(Theme.accent)
     }

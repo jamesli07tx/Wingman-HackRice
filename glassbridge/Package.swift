@@ -27,6 +27,7 @@ let package = Package(
         "ProfileView.swift",
         "GlassesView.swift",
         "SessionView.swift",
+        "FeedView.swift",
       ]
     ),
     .testTarget(

@@ -169,6 +169,7 @@ glassbridge/Wingman/BridgeController.swift:4
 glassbridge/Wingman/Config.swift:4
 glassbridge/Wingman/CortexClient.swift:5
 glassbridge/Wingman/CortexSocket.swift:4
+glassbridge/Wingman/DashboardSocket.swift:5
 glassbridge/Wingman/FrameSampler.swift:4
 glassbridge/Wingman/HudRenderer.swift:10
 glassbridge/Wingman/LinkClient.swift:3
@@ -219,12 +220,24 @@ The app is self-contained now: everything below happens on the phone, in order, 
 5. **Session tab.** One big **Start**, a replica of the card currently on the lens (same title /
    subtitle / ≤5 lines / footer the renderer draws), the last frame sent, and the frames/battery/
    session strip.
+6. **Feed tab.** The observability window, and the reason the wearer no longer needs the console open:
+   it dials Cortex's read-only dashboard socket (`wss://…/ws/dashboard?token=<Clerk JWT>`, DESIGN.md
+   §4.3) the moment you are signed in — independent of Start/Stop — and lays out one timeline of what
+   went up and what came back. Each sent frame's thumbnail appears against the gate class Cortex
+   assigned it (`banner · Anthropic`, `document`, `nothing`) with the round-trip latency; under them sit
+   the identifications the lens silenced (`Guess: … · 42% · silenced (< 60%)`), every card that reached
+   the lens, session/status events, and the local milestones (`session_start sent`, `armed …`,
+   `capture_photo → photo sent`). A strip of counters sits on top, and two amber banners do the
+   diagnosing: one when the dashboard socket is not connected, one when frames are going up but no
+   gate result has come back — which is the difference between "recognition is bad" and "Cortex never
+   armed this session". The `/feed` page on the console is now the operator's copy of this screen, not
+   the wearer's only one.
 
 The top bar carries the signed-in email, the link pill and **Sign out** (which also unlinks the device
 — the token belongs to the account that minted it).
 
-**Console still needed for two things only:** `/feed` (the window into what Cortex thinks the glasses
-are seeing) and a dashboard-initiated Start. The 6-digit code path did not disappear — it moved to
+**Console still needed for two things only:** the identification override (the one action the phone
+cannot take) and a dashboard-initiated Start — the `/feed` view itself now lives in the app's Feed tab. The 6-digit code path did not disappear — it moved to
 **Session → Debug tools**, which is `#if DEBUG` and also holds the **Cortex URL** override, the
 DevHarness toggle, the hour-zero spike, test frames and the display playground.
 
@@ -250,6 +263,6 @@ Cortex → human gets the `https://…fly.dev` URL. ② If it differs from the b
 into Session → Debug tools → Apply. ③ Sign in on the phone → the device links itself. ④ Upload the
 resume, save the links. ⑤ Connect the glasses → Start → M2 checks (DESIGN.md §6).
 
-Also needed from the Windows side (§3): `/feed`, as the window into what Cortex thinks the glasses
-are seeing. Until Cortex is up, DevHarness is Cortex — but it mints no Clerk JWT, so against the
+Also needed from the Windows side (§3): `/ws/dashboard`, which is what the app's own Feed tab drinks
+from (the console's `/feed` is the operator's copy of the same stream). Until Cortex is up, DevHarness is Cortex — but it mints no Clerk JWT, so against the
 harness use the manual 6-digit path in Debug tools.
