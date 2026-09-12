@@ -150,7 +150,11 @@ final class BridgeController: ObservableObject {
   private func arm(sessionId newSessionId: String, config: ArmedConfig?) {
     // The spike owns the DAT session for its duration (runSpike refuses to start while armed; this is the
     // other half of that deal).
-    guard !spikeRunning else { NSLog("ignoring armed \(newSessionId): the hour-zero spike is running"); return }
+    guard !spikeRunning else {
+      NSLog("ignoring armed \(newSessionId): the hour-zero spike is running")
+      socket?.send(.status(battery: nil, note: "spike_running"))   // tell Cortex why nothing is coming up
+      return
+    }
     let cfg = config ?? .defaults
     NSLog("armed.config: compiled=\(ArmedConfig.defaults) received=\(String(describing: config)) → using \(cfg)")
 
@@ -192,7 +196,10 @@ final class BridgeController: ObservableObject {
   }
 
   private func disarm() {
-    armTask?.cancel()        // NOT nil'd: the next arm() must still await it, or a slow dat.start() races the new one
+    // Released, not retained: awaiting a hung dat.start() would wedge every later Start. A stale start()
+    // that fails later cannot hurt the newer session — DATSessionManager.start()'s catch tears down only
+    // when `session === s`, i.e. only when the failing session is still the live one.
+    armTask?.cancel(); armTask = nil
     armed = false
     sessionId = nil
     pendingPhotoReqIds.removeAll()
