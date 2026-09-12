@@ -33,7 +33,7 @@ Written for James + the coding agent continuing on the next machine. Mac/GlassBr
 2. AWS console → IAM → Users → create user `wingman-deploy` → attach `AdministratorAccess` (hackathon pragmatism; delete the user after the event) → create access key → run `aws configure` (region: `us-east-1`). Also check Billing → Credits for free credits.
 3. Tell the agent "aws is configured".
 
-**Agent steps (script it, verify each):**
+**Agent steps — ALREADY SCRIPTED, one command:** `node scripts/aws/provision.mjs` does everything below end-to-end (idempotent; re-run safe) and prints the final URLs. `node scripts/aws/redeploy.mjs` ships code updates to the instance afterwards. The AWS CLI is already installed on the original Windows machine. Reference sequence the script implements:
 1. Security group `wingman-cortex-sg`: inbound TCP 8080 from 0.0.0.0/0 (CloudFront→origin; fine for a hackathon), TCP 22 from the current IP only (or skip SSH and rely on SSM Session Manager — preferred: attach instance profile with `AmazonSSMManagedInstanceCore`).
 2. Secrets → SSM Parameter Store as SecureStrings via `scripts/pipe-env.mjs --value KEY | aws ssm put-parameter --name /wingman/KEY --type SecureString --value file:///dev/stdin` (on Windows pipe via stdin equivalent; do NOT put secrets in user-data).
 3. EC2 `t3.micro` (free tier) or `t3.small`, Amazon Linux 2023, IAM role allowing `ssm:GetParameter` on `/wingman/*` + SSM core. User-data: install git+Node 24+pnpm, clone the repo, write `/opt/wingman/.env` by reading the SSM parameters at boot, `pnpm install --filter @wingman/cortex...`, run `pnpm -F @wingman/cortex start` under a systemd unit (restart=always) with `PORT=8080`.
@@ -42,12 +42,11 @@ Written for James + the coding agent continuing on the next machine. Mac/GlassBr
 6. Acceptance: `https://<dist>.cloudfront.net/healthz` 200 · a `wss://<dist>.cloudfront.net/ws/device?token=x` attempt reaches cortex (expect auth rejection, not a connection failure) · CORS preflight for PUT still passes through.
 7. **Redeploy story** (needed repeatedly during the event): document the one-liner — SSM Run Command / Session Manager: `cd /opt/wingman && git pull && pnpm install --filter @wingman/cortex... && systemctl restart wingman-cortex`.
 
-## 3. Deploy console on Vercel (~15 min, after §2 gives the URL)
+## 3. Deploy console on Vercel (~10 min, after §2 gives the URL)
 
-1. `vercel login` (jamesjli2025 account) → `cd console && vercel link --yes --project wingman-console` (the link file didn't travel; the project + Clerk vars already exist).
-2. Add the two URL vars: `vercel env add NEXT_PUBLIC_CORTEX_URL production` → `https://<dist>.cloudfront.net`; same for `NEXT_PUBLIC_CORTEX_WS_URL` → `wss://<dist>.cloudfront.net`.
-3. Monorepo deploy — use the **prebuilt** flow (a plain `vercel --prod` from `console/` can't see the pnpm workspace): `vercel pull --yes --environment=production` → `vercel build --prod` (run with the root-.env + URL vars in the process env, e.g. via a variant of `scripts/dev-console.mjs`'s loader — the `NEXT_PUBLIC_*` values bake in at build time) → `vercel deploy --prebuilt --prod`.
-4. Acceptance: the production URL loads → sign in on a **phone** → `/capture` gets camera permission (HTTPS!) → banner test passes over the public internet.
+**Scripted:** `vercel login` (jamesjli2025 account), then `node scripts/vercel-deploy.mjs https://<dist>.cloudfront.net` — it links the existing `wingman-console` project, pulls settings, bakes the cortex URLs into a local prebuilt build (the monorepo-safe flow; a plain `vercel --prod` can't see the pnpm workspace), and deploys to production. Clerk vars are already on the project.
+
+Acceptance: the production URL loads → sign in on a **phone** → `/capture` gets camera permission (HTTPS!) → banner test passes over the public internet.
 
 ## 4. Post-deploy integration + demo prep
 
