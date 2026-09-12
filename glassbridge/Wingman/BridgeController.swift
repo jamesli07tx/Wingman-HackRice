@@ -110,10 +110,6 @@ final class BridgeController: ObservableObject {
   init() {
     // The harness is a per-launch dev opt-in: never restore a stale `true` when a real Cortex URL is configured
     // (a persisted toggle from a harness session would silently dial the dead tunnel and show "disconnected").
-    foregroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-      guard let self, case .linked = self.linkState else { return }
-      self.socket?.connect()   // idempotent: no-op while a task is open; cuts the backoff wait short after unlock
-    }
     useDevHarness = Config.isCortexConfigured ? false : (UserDefaults.standard.object(forKey: "useDevHarness") as? Bool ?? false)
     keepLensAwake = UserDefaults.standard.object(forKey: "keepLensAwake") as? Bool ?? true
     if let id = Keychain.get(Keychain.deviceIdKey), Keychain.get(Keychain.deviceTokenKey) != nil { linkState = .linked(deviceId: id) }
@@ -153,6 +149,13 @@ final class BridgeController: ObservableObject {
         Task { @MainActor in self?.refreshBattery() }
       }
     reconnectIfLinked()
+    // Registered last (all stored properties initialized). Cuts the reconnect backoff short after an unlock.
+    foregroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+      Task { @MainActor in
+        guard let self, case .linked = self.linkState else { return }
+        self.socket?.connect()   // idempotent: no-op while a task is open
+      }
+    }
   }
 
   deinit {
