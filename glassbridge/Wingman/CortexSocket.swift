@@ -30,7 +30,9 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
   private let deviceType: DeviceType
   private let caps: DeviceCaps
   private let q = DispatchQueue(label: "wingman.cortexsocket")
-  private lazy var session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+  /// URLSession retains its delegate (us) until invalidated — so it is created lazily in open() and
+  /// invalidated in disconnect()/deinit, otherwise every socket (and its reconnect loop) leaks forever.
+  private var session: URLSession?
   private var task: URLSessionWebSocketTask?
   private var shouldRun = false
   private var attempts = 0
@@ -46,12 +48,25 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
     self.caps = caps
   }
 
+  deinit { session?.invalidateAndCancel() }
+
   // MARK: public (thread-safe)
 
   func connect() { q.async { self.shouldRun = true; self.open() } }
 
+  /// Full stop: no reconnect, no heartbeat, URLSession invalidated so it stops retaining us.
+  /// Backoff and the "reconnected" flag reset too — a later connect() is a fresh first connect.
   func disconnect() {
-    q.async { self.shouldRun = false; self.wantsSession = false; self.teardown(); self.set(.disconnected) }
+    q.async {
+      self.shouldRun = false
+      self.wantsSession = false
+      self.attempts = 0
+      self.everConnected = false
+      self.teardown()
+      self.session?.invalidateAndCancel()
+      self.session = nil
+      self.set(.disconnected)
+    }
   }
 
   func startSession() { q.async { self.wantsSession = true; self.sendLocked(.sessionStart) } }
@@ -63,7 +78,9 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
   private func open() {
     guard shouldRun, task == nil else { return }
     set(.connecting)
-    let t = session.webSocketTask(with: url)
+    let s = session ?? URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+    session = s
+    let t = s.webSocketTask(with: url)
     task = t
     t.resume()
     receiveLoop(t)
@@ -73,7 +90,8 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
   private func sendLocked(_ msg: DeviceToCortex) {
     guard state == .connected, let t = task else { return }
     t.send(.string(Wire.encode(msg))) { [weak self] err in
-      if err != nil { self?.q.async { self?.fail() } }
+      guard err != nil, let self else { return }
+      self.q.async { self.fail(t) }
     }
   }
 
@@ -96,8 +114,11 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
     }
   }
 
-  private func fail() {
-    guard task != nil else { return }
+  /// Tear down and retry. `t`, when given, is the task the error came from: a stale task's late failure
+  /// must never kill the healthy newer connection that replaced it.
+  private func fail(_ t: URLSessionWebSocketTask? = nil) {
+    guard let current = task else { return }
+    if let t, t !== current { return }
     teardown()
     set(.disconnected)
     scheduleReconnect()
@@ -123,15 +144,19 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
   }
 
   private func startHeartbeat() {
-    let t = DispatchSource.makeTimerSource(queue: q)
-    t.schedule(deadline: .now() + heartbeatInterval, repeating: heartbeatInterval)
-    t.setEventHandler { [weak self] in
-      guard let self else { return }
+    heartbeat?.cancel()
+    let timer = DispatchSource.makeTimerSource(queue: q)
+    timer.schedule(deadline: .now() + heartbeatInterval, repeating: heartbeatInterval)
+    timer.setEventHandler { [weak self] in
+      guard let self, let t = self.task else { return }
       self.sendLocked(.status(battery: self.batteryProvider?(), note: nil))
-      self.task?.sendPing { err in if err != nil { self.q.async { self.fail() } } }
+      t.sendPing { [weak self] err in
+        guard err != nil, let self else { return }
+        self.q.async { self.fail(t) }
+      }
     }
-    t.resume()
-    heartbeat = t
+    timer.resume()
+    heartbeat = timer
   }
 
   // MARK: URLSessionWebSocketDelegate (called on URLSession's queue → hop to q)

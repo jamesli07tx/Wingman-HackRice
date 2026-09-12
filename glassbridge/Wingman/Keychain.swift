@@ -1,5 +1,10 @@
 // Keychain.swift — deviceToken/deviceId storage (DESIGN.md §5.1 responsibility 1). Generic-password items,
 // readable after first unlock so a locked phone can still reconnect.
+//
+// INTEGRATION: Keychain
+// IN:  deviceId / deviceToken strings from the ClaimResponse that LinkClient.claim returns
+// OUT: get(Keychain.deviceTokenKey) — the token CortexSocket appends to its ws URL; nil = not linked yet
+// WIRE: BridgeController.link(code:) writes both keys after a successful claim; unlink deletes them
 import Foundation
 import Security
 

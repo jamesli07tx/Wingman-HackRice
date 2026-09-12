@@ -14,7 +14,8 @@ final class TestWSServer {
   private let lock = NSLock()
   private var _received: [String] = []
   var received: [String] { lock.lock(); defer { lock.unlock() }; return _received }
-  var connectionCount = 0
+  private var _connectionCount = 0
+  var connectionCount: Int { lock.lock(); defer { lock.unlock() }; return _connectionCount }
 
   init(port: UInt16) { self.port = port }
 
@@ -34,7 +35,7 @@ final class TestWSServer {
   }
 
   private func accept(_ c: NWConnection) {
-    lock.lock(); conns.append(c); connectionCount += 1; lock.unlock()
+    lock.lock(); conns.append(c); _connectionCount += 1; lock.unlock()
     c.start(queue: .global())
     receive(c)
   }
@@ -124,6 +125,42 @@ final class CortexSocketTests: XCTestCase {
     XCTAssertTrue(server.received.contains { $0.contains("\"reconnected\"") })
     RunLoop.main.run(until: Date().addingTimeInterval(0.2))
     XCTAssertTrue(states.contains(.disconnected), "states: \(states)")
+    sock.disconnect()
+  }
+
+  /// disconnect() must invalidate the URLSession (which retains its delegate) so the socket can deallocate
+  /// — a leaked one keeps shouldRun == true and reconnects forever as a zombie device.
+  func testDisconnectInvalidatesSessionSoSocketDeallocates() throws {
+    let port = UInt16.random(in: 20000...40000)
+    let server = TestWSServer(port: port); try server.start(); defer { server.stop() }
+    weak var weakSock: CortexSocket?
+    do {
+      let sock = CortexSocket(url: URL(string: "ws://127.0.0.1:\(port)/ws/device")!, token: "t")
+      weakSock = sock
+      sock.connect()
+      XCTAssertTrue(server.wait { self.types($0) == ["hello"] })
+      sock.disconnect()
+    }
+    let deadline = Date().addingTimeInterval(3)
+    while weakSock != nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    XCTAssertNil(weakSock, "CortexSocket leaked — URLSession still retains it")
+    let connections = server.connectionCount
+    RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+    XCTAssertEqual(server.connectionCount, connections, "kept reconnecting after disconnect()")
+  }
+
+  func testHeartbeatSendsStatusWithBattery() throws {
+    let port = UInt16.random(in: 20000...40000)
+    let server = TestWSServer(port: port); try server.start(); defer { server.stop() }
+    let sock = CortexSocket(url: URL(string: "ws://127.0.0.1:\(port)/ws/device")!, token: "t")
+    sock.heartbeatInterval = 0.2
+    sock.batteryProvider = { 0.61 }
+    sock.connect()
+    XCTAssertTrue(server.wait(timeout: 5) { msgs in
+      msgs.compactMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] }
+        .filter { $0["type"] as? String == "status" && $0["battery"] as? Double == 0.61 }
+        .count >= 2
+    }, "got \(server.received)")
     sock.disconnect()
   }
 
