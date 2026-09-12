@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0228D3C416FE871855936A42 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = 143BCCD11C10823E0FE76773 /* Config.swift */; };
+		13E688E912E1F6549E3FDE44 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 82BF2E26970C2A88BEA11D29 /* Assets.xcassets */; };
 		28EFD650701818507AD3479B /* LinkClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC25DB79E1DE6F8F326AF89 /* LinkClient.swift */; };
 		2D15653EBD475A19CD4B599F /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3A06EC881660F69955A32CF4 /* MWDATCore */; };
 		439BCBEA8EA2A7A130F82AA0 /* ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D346CE90D2263A955B0548 /* ConfigTests.swift */; };
@@ -53,6 +54,7 @@
 		3F99647213394E553B9B06A1 /* FrameSamplerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSamplerTests.swift; sourceTree = "<group>"; };
 		45D346CE90D2263A955B0548 /* ConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigTests.swift; sourceTree = "<group>"; };
 		5B999F287269B7E1837BD035 /* TestImports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestImports.swift; sourceTree = "<group>"; };
+		82BF2E26970C2A88BEA11D29 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		86E2FB8D175F61D4C454B1C4 /* HudRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HudRendererTests.swift; sourceTree = "<group>"; };
 		8BAA48A486D131CD46686C35 /* ProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolTests.swift; sourceTree = "<group>"; };
 		9133B46962B158E4F2E3A993 /* CortexSocketTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CortexSocketTests.swift; sourceTree = "<group>"; };
@@ -68,7 +70,7 @@
 		E21C50607EFEF51382155EA3 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		F2FE628C0697A064C96F62AF /* Wingman.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Wingman.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeController.swift; sourceTree = "<group>"; };
-		"TEMP_8C752B70-9FD6-4E18-8230-8EE2DE493728" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		"TEMP_67E7466D-E6F6-45C5-BB69-0E9DB1A14F90" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -113,6 +115,7 @@
 			isa = PBXGroup;
 			children = (
 				E21C50607EFEF51382155EA3 /* App.swift */,
+				82BF2E26970C2A88BEA11D29 /* Assets.xcassets */,
 				91E1F270FDCD149BDB64A530 /* AudioKeepalive.swift */,
 				F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */,
 				143BCCD11C10823E0FE76773 /* Config.swift */,
@@ -139,10 +142,10 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		"TEMP_FB2E0281-2B54-4E75-85DE-D5D21B646C2B" /* glassbridge */ = {
+		"TEMP_CF616095-65ED-4DC6-81B0-E004B1887406" /* glassbridge */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_8C752B70-9FD6-4E18-8230-8EE2DE493728" /* Config.xcconfig */,
+				"TEMP_67E7466D-E6F6-45C5-BB69-0E9DB1A14F90" /* Config.xcconfig */,
 			);
 			path = glassbridge;
 			sourceTree = "<group>";
@@ -173,6 +176,7 @@
 			buildConfigurationList = 4F950301695761883A7B94E7 /* Build configuration list for PBXNativeTarget "Wingman" */;
 			buildPhases = (
 				0C4791B69D5A0D50A8C69AFD /* Sources */,
+				AE21E60F8476DCF6BD5701AD /* Resources */,
 				111E4BE77C58FDF9398EDB3A /* Frameworks */,
 			);
 			buildRules = (
@@ -231,6 +235,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AE21E60F8476DCF6BD5701AD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				13E688E912E1F6549E3FDE44 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0C4791B69D5A0D50A8C69AFD /* Sources */ = {
@@ -338,7 +353,7 @@
 		};
 		9D6513D9C82CCE7BD3D4DAB1 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_8C752B70-9FD6-4E18-8230-8EE2DE493728" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_67E7466D-E6F6-45C5-BB69-0E9DB1A14F90" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -403,7 +418,7 @@
 		};
 		DABFDCF87C106D2CAF6C5A18 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_8C752B70-9FD6-4E18-8230-8EE2DE493728" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_67E7466D-E6F6-45C5-BB69-0E9DB1A14F90" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;

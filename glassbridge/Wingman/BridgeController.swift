@@ -34,6 +34,14 @@ final class BridgeController: ObservableObject {
   /// connectGlasses() is in flight — StatusView disables the button and spins.
   @Published private(set) var glassesConnecting = false
   @Published private(set) var testFramesRunning = false
+  /// A render wakes a sleeping lens, and the lens sleeps ~25 s after the last one (api-notes §6) — so while a
+  /// session is armed we re-send the current card every 20 s. Off = let the lens sleep between cards.
+  @Published var keepLensAwake: Bool {
+    didSet {
+      UserDefaults.standard.set(keepLensAwake, forKey: "keepLensAwake")
+      if armed { startKeepAwake() } else { awakeTimer?.invalidate(); awakeTimer = nil }
+    }
+  }
   @Published var useDevHarness: Bool {
     didSet {
       UserDefaults.standard.set(useDevHarness, forKey: "useDevHarness")
@@ -57,11 +65,16 @@ final class BridgeController: ObservableObject {
   /// The in-flight arm (connect + startCamera); cancelled and awaited so two arms can never race inside DAT.
   private var armTask: Task<Void, Never>?
   private var simulatorFrameTimer: Timer?
+  /// True while the arm sequence (connect + startCamera) runs — the stream watchdog must not fight it.
+  private var arming = false
+  private var watchdogTask: Task<Void, Never>?
+  private var awakeTimer: Timer?
   private var datChanges: AnyCancellable?
   private var batteryObserver: NSObjectProtocol?
 
   init() {
     useDevHarness = UserDefaults.standard.object(forKey: "useDevHarness") as? Bool ?? !Config.isCortexConfigured
+    keepLensAwake = UserDefaults.standard.object(forKey: "keepLensAwake") as? Bool ?? true
     if let id = Keychain.get(Keychain.deviceIdKey), Keychain.get(Keychain.deviceTokenKey) != nil { linkState = .linked(deviceId: id) }
     // FrameSampler invokes `send` on ITS OWN serial queue — hop to main before touching any state here.
     let s = FrameSampler { [weak self] msg in
@@ -232,6 +245,8 @@ final class BridgeController: ObservableObject {
     armTask = Task {
       _ = await previous?.value     // serialize: never two overlapping DAT attach sequences
       guard !Task.isCancelled else { return }
+      arming = true
+      defer { arming = false }
       if !dat.isConnected { await connectGlasses() }          // first Start of the app also brings the link up
       guard !Task.isCancelled, dat.isConnected else { return }  // connectGlasses already reported the failure
       renderer?.apply(renderMinGapMs: cfg.renderMinGapMs)     // never rebuilt: the display outlives the session
@@ -244,7 +259,52 @@ final class BridgeController: ObservableObject {
         socket?.send(.status(battery: nil, note: "dat_failed: \(error.localizedDescription)"))
       }
     }
+    startWatchdog()
+    startKeepAwake()
     #endif
+  }
+
+  // MARK: stream watchdog + lens keepalive (both live exactly as long as an armed session)
+
+  /// The camera stream dies quietly: the glasses' Wi-Fi hotspot drops and DAT sits in .waitingForDevice with no
+  /// error. Only a stopCamera()/startCamera() cycle re-joins that hotspot, so that is what this does — after
+  /// 6 s of not-streaming, then backing off 6/12/24 s, at most 5 times per arm.
+  private func startWatchdog() {
+    #if canImport(MWDATCore)
+    guard let dat, DATSessionManager.isHardwareAvailable else { return }
+    watchdogTask?.cancel()
+    watchdogTask = Task { [weak self] in
+      let backoff = [6.0, 12.0, 24.0]
+      var attempts = 0
+      var downSince: Date?
+      while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        guard let self, !Task.isCancelled, self.armed else { return }
+        if case .streaming = dat.streamState { downSince = nil; attempts = 0; continue }
+        guard !self.arming else { downSince = nil; continue }      // an arm is still bringing the camera up
+        let since = downSince ?? Date()
+        downSince = since
+        guard -since.timeIntervalSinceNow >= backoff[min(attempts, backoff.count - 1)], attempts < 5 else { continue }
+        attempts += 1
+        self.lastError = "Camera stream dropped — reconnecting (\(attempts)/5)"
+        dat.stopCamera()
+        do { try await dat.startCamera() } catch { self.lastError = "Glasses: \(error.localizedDescription)" }
+        downSince = Date()                                          // next attempt waits out the next backoff
+      }
+    }
+    #endif
+  }
+
+  /// Re-renders the card already on the lens, same cardId/seq — a full replace, which is all a DAT send ever is.
+  private func startKeepAwake() {
+    awakeTimer?.invalidate(); awakeTimer = nil
+    guard keepLensAwake else { return }
+    awakeTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+      Task { @MainActor in
+        guard let self, self.armed, self.keepLensAwake, let card = self.lastCard else { return }
+        self.renderer?.render(card)
+      }
+    }
   }
 
   private func disarm() {
@@ -252,6 +312,8 @@ final class BridgeController: ObservableObject {
     // later cannot hurt the newer session — DATSessionManager guards both connect() and startCamera() on
     // `session === s`, i.e. it only acts while the session it started on is still the live one.
     armTask?.cancel(); armTask = nil
+    watchdogTask?.cancel(); watchdogTask = nil
+    awakeTimer?.invalidate(); awakeTimer = nil
     armed = false
     sessionId = nil
     pendingPhotoReqIds.removeAll()

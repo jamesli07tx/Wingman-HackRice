@@ -19,6 +19,7 @@ import CoreImage
 import CoreMedia
 import CoreVideo
 import UIKit
+import NetworkExtension
 import MWDATCore
 import MWDATCamera
 import MWDATDisplay
@@ -44,6 +45,9 @@ final class DATSessionManager: ObservableObject {
   @Published private(set) var frameCount = 0
   /// Frames that ARRIVED from the glasses (before decoding) — proves the link even if decode fails.
   @Published private(set) var rawFrameCount = 0
+  /// The Wi-Fi the PHONE is on. The camera transport makes the SDK join the glasses' own hotspot
+  /// ("Meta RB Display …"), so this is the one visible sign that the join actually happened.
+  @Published private(set) var wifiSSID: String?
 
   // The three callbacks are invoked OFF the main actor, straight from the DAT listener thread, so they are
   // `@Sendable` and are snapshotted into locals at startCamera() time — the listener closures never touch `self`.
@@ -64,6 +68,8 @@ final class DATSessionManager: ObservableObject {
   private let sessionBag = ListenerTokenBag()
   /// Camera/stream listeners only — cleared on every stopCamera(), so the session/display ones survive.
   private let cameraBag = ListenerTokenBag()
+  /// Polls the SSID while connected — the join happens inside the SDK, with no callback of its own.
+  private var wifiTimer: Timer?
 
   static var isHardwareAvailable: Bool {
     #if targetEnvironment(simulator)
@@ -112,6 +118,25 @@ final class DATSessionManager: ObservableObject {
     wearables.addDevicesListener { [weak self] ids in
       Task { @MainActor in self?.deviceName = ids.first.flatMap { self?.wearables.deviceForIdentifier($0)?.nameOrId() } }
     }.store(in: lifetimeBag)
+  }
+
+  // MARK: Wi-Fi / hotspot
+  //
+  // NEHotspotNetwork.fetchCurrent is iOS 14+, callback-only, and needs the `wifi-info` entitlement (we ship it,
+  // alongside HotspotConfiguration, for the Display camera transport). It answers nil when iOS withholds the
+  // SSID (no Wi-Fi, or neither location permission nor an app-configured hotspot) — a blank pill, not an error.
+
+  func refreshWiFi() async {
+    wifiSSID = await withCheckedContinuation { cont in
+      NEHotspotNetwork.fetchCurrent { cont.resume(returning: $0?.ssid) }
+    }
+  }
+
+  private func startWiFiPolling() {
+    wifiTimer?.invalidate()
+    wifiTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+      Task { @MainActor in await self?.refreshWiFi() }
+    }
   }
 
   // MARK: registration (Meta AI round-trip, api-notes §2)
@@ -165,6 +190,8 @@ final class DATSessionManager: ObservableObject {
       d.statePublisher.listen { [weak self] st in Task { @MainActor in self?.displayState = st } }.store(in: sessionBag)
       d.start()
       isConnected = true
+      startWiFiPolling()
+      await refreshWiFi()
     } catch {
       // Only tear down if `s` is still the live session: a disconnect→connect while this connect() was
       // suspended (the handshake) means disconnect() here would kill the NEW session.
@@ -197,7 +224,10 @@ final class DATSessionManager: ObservableObject {
     let onPhoto = self.onPhoto
     let onPhotoError = self.onPhotoError
 
-    stream.statePublisher.listen { [weak self] st in Task { @MainActor in self?.streamState = st } }.store(in: cameraBag)
+    // Every state change is a candidate hotspot join/leave — the SDK re-joins on each stream start.
+    stream.statePublisher.listen { [weak self] st in
+      Task { @MainActor in self?.streamState = st; await self?.refreshWiFi() }
+    }.store(in: cameraBag)
     stream.videoFramePublisher.listen { [weak self] frame in
       Task { @MainActor in self?.rawFrameCount += 1 }
       guard let img = Self.cgImage(from: frame) else { return }
@@ -210,6 +240,7 @@ final class DATSessionManager: ObservableObject {
       if case .photoCaptureFailed = e { onPhotoError?("capture_failed") }
     }.store(in: cameraBag)
     stream.start()
+    await refreshWiFi()
   }
 
   /// Detaches the camera (api-notes §4: cascades to the stream) and leaves the session + display up.
@@ -226,6 +257,8 @@ final class DATSessionManager: ObservableObject {
     display?.stop(); display = nil
     session?.stop(); session = nil
     sessionBag.clear()      // lifetimeBag survives: the registration/devices listeners are not per-session
+    wifiTimer?.invalidate(); wifiTimer = nil
+    wifiSSID = nil
     isConnected = false
     sessionState = .idle
     displayState = .stopped

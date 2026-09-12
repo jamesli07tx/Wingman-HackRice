@@ -95,6 +95,8 @@ struct StatusView: View {
             pill("Display \(dat.displayState)", isDisplayStarted(dat) ? .green : .secondary)
             pill("Camera \(dat.streamState)", isStreaming(dat) ? .green : .secondary)
           }
+          // The camera transport only works once the phone has joined the glasses' own hotspot.
+          pill(dat.wifiSSID.map { "Hotspot: \($0)" } ?? "Hotspot: off", onGlassesHotspot(dat) ? .green : .secondary)
         }
         Text(dat.deviceName ?? "no device").font(.footnote).foregroundStyle(.secondary)
 
@@ -146,6 +148,8 @@ struct StatusView: View {
           Text(missing).font(.caption).foregroundStyle(.secondary)
         }
       }
+
+      Toggle("Keep lens awake", isOn: $bridge.keepLensAwake).font(.footnote)
 
       Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
         GridRow {
@@ -294,6 +298,11 @@ struct StatusView: View {
   private func isStreaming(_ dat: DATSessionManager) -> Bool { if case .streaming = dat.streamState { return true }; return false }
   private func isDisplayStarted(_ dat: DATSessionManager) -> Bool { if case .started = dat.displayState { return true }; return false }
   private func isRegistered(_ dat: DATSessionManager) -> Bool { if case .registered = dat.registration { return true }; return false }
+  /// The glasses' hotspot announces itself as "Meta RB Display …" — any other SSID means the join has not happened.
+  private func onGlassesHotspot(_ dat: DATSessionManager) -> Bool {
+    guard let ssid = dat.wifiSSID else { return false }
+    return ["Meta", "Display"].contains { ssid.range(of: $0, options: .caseInsensitive) != nil }
+  }
   #endif
 
   private var batteryText: String {

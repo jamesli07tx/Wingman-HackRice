@@ -88,19 +88,66 @@ final class RenderCoalescer {
 }
 
 /// Defensive clipping so a card can never wrap-scroll on the 600×600 lens (Cortex enforces limits upstream).
+///
+/// Measured on a Meta Ray-Ban Display (DAT 0.9.0): body text wraps at word boundaries at ≈ 38 chars per row,
+/// and ≈ 8 body rows fit under a heading and above a meta footer without scrolling. So a "legal" 5 × 40-char
+/// card is already 10 rows — `fit` is what keeps it on one screen.
 enum HudText {
   static let maxLines = 5
   static let maxChars = 44        // contract says ≈ 40; small slack, then hard clip
   static let maxTitleChars = 22   // heading is the largest style — clips sooner (measured on-lens)
+  static let bodyCharsPerRow = 38 // body style wraps here (measured: a 40-char line wrapped before its last word)
+  static let maxBodyRows = 8      // subtitle + lines together, excluding the heading and the footer
+
+  /// One line of text must never become extra rows on a screen that only scrolls.
+  private static func flatten(_ s: String) -> String { String(s.map { $0.isNewline ? " " : $0 }) }
 
   static func clip(_ s: String, max: Int = maxChars) -> String {
-    // Flatten newlines first: one line of text must never become extra rows on a screen that only scrolls.
-    let flat = String(s.map { $0.isNewline ? " " : $0 })
+    let flat = flatten(s)
     return flat.count <= max ? flat : String(flat.prefix(max - 1)) + "…"
   }
 
   static func lines(of card: HudCard) -> [String] {
     (card.lines ?? []).prefix(maxLines).map { clip($0) }
+  }
+
+  /// Rows this string will occupy once the lens wraps it.
+  static func rows(_ s: String) -> Int { max(1, (s.count + bodyCharsPerRow - 1) / bodyCharsPerRow) }
+
+  /// Clip to one row, ending at a word boundary so the "…" never lands mid-word. Result ≤ `max` chars.
+  private static func wordClip(_ s: String, max: Int = bodyCharsPerRow) -> String {
+    guard s.count > max else { return s }
+    let head = s.prefix(max - 1)
+    let cut = head.lastIndex(of: " ").map { head[head.startIndex..<$0] } ?? head[...]
+    return cut.trimmingCharacters(in: .whitespaces) + "…"
+  }
+
+  /// Whole-card fit: title + footer clipped, body squeezed to `maxBodyRows`. Squeezing clips the LONGEST
+  /// remaining body string to one row at a time, so a card loses its wordiest line before its shortest.
+  static func fit(_ card: HudCard) -> HudCard {
+    var out = card
+    out.title = clip(card.title, max: maxTitleChars)
+    out.footer = card.footer.map { clip($0, max: bodyCharsPerRow) }
+
+    var subtitle = card.subtitle.map(flatten)
+    var lines = (card.lines ?? []).prefix(maxLines).map(flatten)
+    func usedRows() -> Int { (subtitle.map(rows) ?? 0) + lines.reduce(0) { $0 + rows($1) } }
+
+    while usedRows() > maxBodyRows {
+      // Longest first; the subtitle is the tie-breaker winner, so lines are only clipped when actually longer.
+      var idx = -1                                   // -1 = the subtitle
+      var len = subtitle?.count ?? -1
+      for (i, l) in lines.enumerated() where l.count > len { len = l.count; idx = i }
+      guard len > bodyCharsPerRow else { break }     // everything is already one row — nothing left to clip
+      if idx < 0 { subtitle = wordClip(subtitle!) } else { lines[idx] = wordClip(lines[idx]) }
+    }
+    // ponytail: both drops are unreachable at 5 lines × 1 row ≤ 8 rows — the belt for a constants bump.
+    if usedRows() > maxBodyRows { subtitle = nil }
+    while usedRows() > maxBodyRows, !lines.isEmpty { lines.removeLast() }
+
+    out.subtitle = subtitle
+    out.lines = card.lines == nil ? nil : lines
+    return out
   }
 }
 
@@ -154,13 +201,11 @@ final class HudRenderer {
 
   /// title (heading) / subtitle (secondary) / ≤ 5 lines (body) / footer (meta, secondary). Root must be a FlexBox.
   /// `.icon*` styles move the title into a row next to a kind icon; `.card*` put the whole thing on a card background.
-  /// `clip: false` renders the card exactly as given (playground fit probes); production always clips.
+  /// `clip: false` renders the card exactly as given (playground fit probes); production runs HudText.fit.
   static func flexBox(for card: HudCard, style: HudStyle = .plain, clip: Bool = true) -> FlexBox {
-    let title = clip ? HudText.clip(card.title, max: HudText.maxTitleChars) : card.title
-    let lines = clip ? HudText.lines(of: card) : (card.lines ?? [])
-    let subtitle = card.subtitle.map { clip ? HudText.clip($0) : $0 }
-    let footer = card.footer.map { clip ? HudText.clip($0) : $0 }
-    let titleText = Text(title, style: .heading)
+    let c = clip ? HudText.fit(card) : card
+    let lines = c.lines ?? []
+    let titleText = Text(c.title, style: .heading)
     let withIcon = (style == .icon || style == .iconCard)
     let root = FlexBox(direction: .column, spacing: 6, alignment: .start, crossAlignment: .stretch, padding: EdgeInsets(all: 24)) {
       if withIcon {
@@ -171,9 +216,9 @@ final class HudRenderer {
       } else {
         titleText
       }
-      if let subtitle { Text(subtitle, style: .body, color: .secondary) }
+      if let subtitle = c.subtitle { Text(subtitle, style: .body, color: .secondary) }
       for line in lines { Text(line, style: .body) }
-      if let footer { Text(footer, style: .meta, color: .secondary) }
+      if let footer = c.footer { Text(footer, style: .meta, color: .secondary) }
     }
     return (style == .card || style == .iconCard) ? root.background(.card) : root
   }
