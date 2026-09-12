@@ -78,6 +78,13 @@ export type GateTelemetryHandler = (
   result: GateResult,
 ) => void;
 
+/** Debug-feed payload: the gate_debug wire event minus what the wiring adds. */
+export type GateDebug = Omit<
+  Extract<DashboardEvent, { type: "gate_debug" }>,
+  "type" | "sessionId" | "frameSeq"
+>;
+export type GateDebugHandler = (sessionId: string, seq: number, debug: GateDebug) => void;
+
 // ---------------------------------------------------------------------------
 // Identify (DESIGN.md §5.3 IdentifyService)
 // ---------------------------------------------------------------------------

@@ -298,4 +298,26 @@ export type DashboardEvent =
       nameGuess: string | null;
       confidence: number;
     }
-  | { type: "session"; sessionId: string; state: "started" | "ended"; reason?: SessionEndReason };
+  | { type: "session"; sessionId: string; state: "started" | "ended"; reason?: SessionEndReason }
+  | {
+      /**
+       * DEBUG ONLY — exactly what the gate sent to Claude and what came back,
+       * emitted once per classified frame right after the `gate` event above
+       * (timeouts and errors included). Consoles that don't know this type
+       * ignore it; nothing in the pipeline depends on it.
+       */
+      type: "gate_debug";
+      sessionId: string;
+      frameSeq: number;
+      model: string;
+      systemPrompt: string;
+      userText: string;
+      /** raw text of the first text block; null when the response had none */
+      rawResponse: string | null;
+      stopReason: string | null;
+      inputTokens: number | null;
+      outputTokens: number | null;
+      latencyMs: number;
+      error: string | null;
+      result: { class: "banner" | "document" | "nothing"; orgHint: string | null } | null;
+    };

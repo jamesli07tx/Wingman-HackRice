@@ -77,6 +77,13 @@ export function gateModel(): string {
  * prompt is cache_control'd and the frame image comes last.
  * haiku: NO thinking param. opus/sonnet: adaptive thinking at effort "low"
  * (thinking draws from max_tokens, hence the larger cap); refusal fallbacks on opus.
+ *
+ * Returns the parse result PLUS what the dashboard's debug feed needs (model,
+ * raw first text block, stop_reason, usage, latency). A response that arrives
+ * but is unusable — refusal, no text block (stop_reason "max_tokens" with only
+ * a thinking block), unparseable JSON — comes back as result null + error text
+ * rather than a throw, so the raw evidence still reaches the dashboard.
+ * Transport failures (rate limit, connection) still throw.
  */
 export async function gateClassify<S extends z.ZodType>(opts: {
   system: string;
@@ -84,9 +91,19 @@ export async function gateClassify<S extends z.ZodType>(opts: {
   userText: string;
   schema: S;
   model?: string;
-}): Promise<z.infer<S>> {
+}): Promise<{
+  result: z.infer<S> | null;
+  model: string;
+  rawText: string | null;
+  stopReason: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  latencyMs: number;
+  error: string | null;
+}> {
   const model = opts.model ?? gateModel();
   const isHaiku = model.includes("haiku");
+  const startedAt = Date.now();
   const response = await withRetry(() =>
     client.beta.messages.create({
       model,
@@ -99,14 +116,26 @@ export async function gateClassify<S extends z.ZodType>(opts: {
       output_config: { format: zodOutputFormat(opts.schema), ...(isHaiku ? {} : { effort: "low" }) },
     } as never),
   );
+  const rawText = extractText(response.content as { type: string; text?: string }[]) || null;
+  const base = {
+    model,
+    rawText,
+    stopReason: response.stop_reason ?? null,
+    inputTokens: response.usage?.input_tokens ?? null,
+    outputTokens: response.usage?.output_tokens ?? null,
+    latencyMs: Date.now() - startedAt,
+  };
   if (response.stop_reason === "refusal") {
-    throw new RefusalError(
-      (response as { stop_details?: { category: string | null } }).stop_details?.category ?? null,
-    );
+    const category =
+      (response as { stop_details?: { category: string | null } }).stop_details?.category ?? null;
+    return { ...base, result: null, error: new RefusalError(category).message };
   }
-  const text = extractText(response.content as { type: string; text?: string }[]);
-  if (!text) throw new Error("gate: structured output missing");
-  return opts.schema.parse(JSON.parse(text)) as z.infer<S>;
+  if (!rawText) return { ...base, result: null, error: "gate: structured output missing" };
+  try {
+    return { ...base, result: opts.schema.parse(JSON.parse(rawText)) as z.infer<S>, error: null };
+  } catch (err) {
+    return { ...base, result: null, error: `gate: unparseable response: ${(err as Error).message}` };
+  }
 }
 
 /**

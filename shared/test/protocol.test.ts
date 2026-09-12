@@ -16,6 +16,7 @@ import {
 } from "../src/index.js";
 import type {
   ArmedMsg,
+  DashboardEvent,
   CapturePhotoMsg,
   CortexToDeviceMsg,
   DeviceToCortexMsg,
@@ -175,5 +176,57 @@ describe("DESIGN.md Appendix C schemas", () => {
       links: { github: "https://github.com/…" },
     };
     expect(ProfileSummarySchema.parse(docExample)).toEqual(docExample);
+  });
+});
+
+describe("DESIGN.md §4.3 dashboard events", () => {
+  it("gate_debug is a literal of the DashboardEvent union, alongside gate", () => {
+    const gate: DashboardEvent = {
+      type: "gate",
+      sessionId: "s_42",
+      frameSeq: 412,
+      class: "banner",
+      orgHint: "Stripe",
+    };
+    // Debug-only twin: everything the gate sent to Claude and got back.
+    const result = { class: "banner", orgHint: "Stripe" } as const;
+    const gateDebug: DashboardEvent = {
+      type: "gate_debug",
+      sessionId: "s_42",
+      frameSeq: 412,
+      model: "claude-opus-5",
+      systemPrompt: "You classify a single first-person frame…",
+      userText: "Classify this frame.",
+      rawResponse: '{"class":"banner","orgHint":"Stripe"}',
+      stopReason: "end_turn",
+      inputTokens: 1203,
+      outputTokens: 21,
+      latencyMs: 2140,
+      error: null,
+      result,
+    };
+    // Timeout shape: no response at all, error text carries the reason.
+    const timedOut: DashboardEvent = {
+      type: "gate_debug",
+      sessionId: "s_42",
+      frameSeq: 413,
+      model: "claude-opus-5",
+      systemPrompt: "You classify a single first-person frame…",
+      userText: "Classify this frame.",
+      rawResponse: null,
+      stopReason: null,
+      inputTokens: null,
+      outputTokens: null,
+      latencyMs: 4000,
+      error: "gate timeout after 4000ms",
+      result: null,
+    };
+
+    for (const event of [gate, gateDebug, timedOut]) {
+      const roundTripped = JSON.parse(JSON.stringify(event)) as DashboardEvent;
+      expect(roundTripped.type).toBe(event.type);
+    }
+    // The embedded result is the same C1 shape the `gate` event carries.
+    expect(GateResultSchema.parse(result)).toEqual(result);
   });
 });

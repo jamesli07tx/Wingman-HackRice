@@ -7,7 +7,8 @@
 // OUT: onTelemetry(sessionId, seq, GateResult) for EVERY classified frame
 //      (dashboard feed, DESIGN.md §4.3) — including timeouts, which report as
 //      class "nothing"; onDetection(sessionId, {class, orgHint, jpeg}) ONLY on
-//      STABILITY_N-consecutive, latch-free hits (D13).
+//      STABILITY_N-consecutive, latch-free hits (D13); opts.onDebug(sessionId,
+//      seq, GateDebug) once per classified frame — debug-only, full round trip.
 // WIRE: new SceneGate(det, telem, { now }) in cortex/src/index.ts, where
 //      det  = (sid, d) => orchestrator.onDetection(sid, d)
 //      telem= (sid, seq, r) => dashboard.emit({ type: "gate", sessionId: sid,
@@ -23,8 +24,14 @@
 
 import { GateResultSchema, COOLDOWN_MIN, STABILITY_N, T_GATE_MS } from "@wingman/shared";
 import type { GateResult } from "@wingman/shared";
-import type { DetectionHandler, GateTelemetryHandler, SceneGateApi } from "../interfaces.js";
-import { gateClassify } from "../llm/anthropic.js";
+import type {
+  DetectionHandler,
+  GateDebug,
+  GateDebugHandler,
+  GateTelemetryHandler,
+  SceneGateApi,
+} from "../interfaces.js";
+import { gateClassify, gateModel } from "../llm/anthropic.js";
 
 /**
  * C1 system prompt — VERBATIM from DESIGN.md Appendix C.
@@ -50,6 +57,9 @@ export interface SceneGateOptions {
   now?: () => number;
   /** out-of-band note sink: timeouts, classify errors, dropped frames */
   onNote?: (sessionId: string, seq: number, note: string) => void;
+  /** debug-only sink: one event per classified frame with the full Claude
+   *  round trip (prompt sent, raw text back, stop_reason, usage, latency). */
+  onDebug?: GateDebugHandler;
 }
 
 interface SessionState {
@@ -68,6 +78,7 @@ export class SceneGate implements SceneGateApi {
   private readonly gateTimeoutMs: number;
   private readonly now: () => number;
   private readonly note: (sessionId: string, seq: number, note: string) => void;
+  private readonly onDebug: GateDebugHandler;
 
   constructor(
     private readonly onDetection: DetectionHandler,
@@ -79,6 +90,7 @@ export class SceneGate implements SceneGateApi {
     this.gateTimeoutMs = opts.gateTimeoutMs ?? T_GATE_MS;
     this.now = opts.now ?? Date.now;
     this.note = opts.onNote ?? (() => {});
+    this.onDebug = opts.onDebug ?? (() => {});
   }
 
   async onFrame(sessionId: string, seq: number, jpeg: Buffer): Promise<void> {
@@ -167,14 +179,29 @@ export class SceneGate implements SceneGateApi {
     return s;
   }
 
-  /** T_GATE_MS deadline -> "nothing" + a telemetry note, never a hang. */
+  /** Fills in the two byte-stable prompt fields; everything else is per-call. */
+  private emitDebug(
+    sessionId: string,
+    seq: number,
+    d: Omit<GateDebug, "systemPrompt" | "userText">,
+  ): void {
+    this.onDebug(sessionId, seq, {
+      systemPrompt: GATE_SYSTEM_PROMPT,
+      userText: GATE_USER_TEXT,
+      ...d,
+    });
+  }
+
+  /** T_GATE_MS deadline -> "nothing" + a telemetry note, never a hang.
+   *  Emits exactly one debug event per classified frame, whatever happened. */
   private async classify(sessionId: string, seq: number, jpeg: Buffer): Promise<GateResult> {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
     const timeout = new Promise<null>((resolve) => {
       timer = setTimeout(() => resolve(null), this.gateTimeoutMs);
     });
     try {
-      const raw = await Promise.race([
+      const out = await Promise.race([
         gateClassify({
           system: GATE_SYSTEM_PROMPT,
           jpegBase64: jpeg.toString("base64"),
@@ -183,13 +210,49 @@ export class SceneGate implements SceneGateApi {
         }),
         timeout,
       ]);
-      if (raw == null) {
-        this.note(sessionId, seq, `gate timeout after ${this.gateTimeoutMs}ms -> nothing`);
+      if (out == null) {
+        const error = `gate timeout after ${this.gateTimeoutMs}ms`;
+        this.note(sessionId, seq, `${error} -> nothing`);
+        this.emitDebug(sessionId, seq, {
+          model: gateModel(),
+          rawResponse: null,
+          stopReason: null,
+          inputTokens: null,
+          outputTokens: null,
+          latencyMs: this.gateTimeoutMs,
+          error,
+          result: null,
+        });
         return NOTHING;
       }
-      return GateResultSchema.parse(raw);
+      this.emitDebug(sessionId, seq, {
+        model: out.model,
+        rawResponse: out.rawText,
+        stopReason: out.stopReason,
+        inputTokens: out.inputTokens,
+        outputTokens: out.outputTokens,
+        latencyMs: out.latencyMs,
+        error: out.error,
+        result: out.result,
+      });
+      if (out.result == null) {
+        this.note(sessionId, seq, `gate error -> nothing: ${out.error}`);
+        return NOTHING;
+      }
+      return out.result;
     } catch (err) {
-      this.note(sessionId, seq, `gate error -> nothing: ${(err as Error).message}`);
+      const error = (err as Error).message;
+      this.note(sessionId, seq, `gate error -> nothing: ${error}`);
+      this.emitDebug(sessionId, seq, {
+        model: gateModel(),
+        rawResponse: null,
+        stopReason: null,
+        inputTokens: null,
+        outputTokens: null,
+        latencyMs: Date.now() - startedAt,
+        error,
+        result: null,
+      });
       return NOTHING;
     } finally {
       if (timer) clearTimeout(timer);

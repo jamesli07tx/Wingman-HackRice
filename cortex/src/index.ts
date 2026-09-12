@@ -125,6 +125,7 @@ async function wireFullStack(): Promise<void> {
     (sessionId, det) => orchRef?.onDetection(sessionId, det),
     (sessionId, seq, r) =>
       hub.emit({ type: "gate", sessionId, frameSeq: seq, class: r.class, orgHint: r.orgHint }),
+    { onDebug: (sid, seq, d) => hub.emit({ type: "gate_debug", sessionId: sid, frameSeq: seq, ...d }) },
   );
   const orchestrator = new SessionOrchestrator({
     gate,
