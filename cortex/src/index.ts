@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import Fastify from "fastify";
+import cors from "@fastify/cors";
 import { createClient } from "@supabase/supabase-js";
 import type { ProfileSummary } from "@wingman/shared";
 
@@ -36,6 +37,11 @@ dotenv.config();
 dotenv.config({ path: fileURLToPath(new URL("../../env.template", import.meta.url)) });
 
 const app = Fastify({ logger: true });
+
+// The console always calls cortex cross-origin (localhost:3000 -> :8080 in dev,
+// vercel.app -> fly.dev in prod). Auth is a bearer header, not cookies, so
+// reflecting any origin is fine.
+await app.register(cors, { origin: true });
 
 app.get("/healthz", async () => ({
   ok: true,

@@ -74,6 +74,34 @@ const EnrichResultSchema = z.strictObject({
 });
 type EnrichResult = z.infer<typeof EnrichResultSchema>;
 
+// The model sometimes overshoots character limits despite the prompt, and a
+// strict rejection makes those rows fail deterministically on every re-run.
+// So: LENIENT decode (structure only) + mechanical clamp + strict re-validation
+// of the card, which is the only render contract. summaryMd/roles are
+// dashboard prose — truncation is fine there.
+const LenientResultSchema = z.object({
+  summaryMd: z.string().min(1),
+  roles: z.array(z.string()),
+  card: z.object({
+    title: z.string().min(1),
+    subtitle: z.string().min(1),
+    lines: z.array(z.string()).min(3),
+  }),
+});
+
+function clampToContract(raw: z.infer<typeof LenientResultSchema>): EnrichResult {
+  const clampLine = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1)}…`);
+  return EnrichResultSchema.parse({
+    summaryMd: raw.summaryMd.slice(0, 600),
+    roles: raw.roles.slice(0, 8).map((r) => clampLine(r, 60)),
+    card: {
+      title: clampLine(raw.card.title, 28),
+      subtitle: clampLine(raw.card.subtitle, 48),
+      lines: raw.card.lines.slice(0, 5).map((l) => clampLine(l, 40)),
+    },
+  });
+}
+
 // Byte-stable — composed from module constants only; nothing interpolated per
 // call (prompt caching). The card half is the ONE canonical rules block from
 // @wingman/shared, also used by cortex ContextService's live path — the two
@@ -177,7 +205,10 @@ async function generateCard(
     // `thinking` intentionally omitted: adaptive is the opus-5 default.
     system: [{ type: "text", text: ENRICH_SYSTEM, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: userTurn }],
-    output_config: { format: zodOutputFormat(EnrichResultSchema), effort: "medium" },
+    // Lenient schema on the wire: structure only. The char limits live in the
+    // prompt as guidance and in clampToContract() as enforcement — a strict
+    // format made length overshoots fail deterministically on every re-run.
+    output_config: { format: zodOutputFormat(LenientResultSchema), effort: "medium" },
   });
 
   if (response.stop_reason === "refusal") {
@@ -186,8 +217,9 @@ async function generateCard(
   if (response.parsed_output == null) {
     throw new Error("structured output came back empty");
   }
-  // Re-validate locally: the DB column is a render contract, not a suggestion.
-  return EnrichResultSchema.parse(response.parsed_output);
+  // Clamp to the render contract, then strict-validate (the DB column is a
+  // contract, not a suggestion — but truncation beats rejection here).
+  return clampToContract(LenientResultSchema.parse(response.parsed_output));
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
