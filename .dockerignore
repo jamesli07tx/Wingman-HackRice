@@ -1,4 +1,4 @@
-# NEVER ship secrets or junk into the image
+tr# NEVER ship secrets or junk into the image
 .env
 .env.*
 env.template

@@ -115,7 +115,8 @@ const tmp = mkdtempSync(join(tmpdir(), "wingman-"));
 const bundle = join(tmp, "wingman-bundle.tgz");
 execFileSync("tar", ["-czf", bundle, "-C", REPO,
   "--exclude", "node_modules", "--exclude", ".env", "--exclude", "env.template",
-  "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "shared", "cortex"]);
+  "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "shared", "cortex"],
+  { env: { ...process.env, COPYFILE_DISABLE: "1" } }); // macOS tar: no ._* AppleDouble files
 aws(["s3", "cp", bundle, `s3://${BUCKET}/wingman-bundle.tgz`], { json: false });
 const s3uri = `s3://${BUCKET}/wingman-bundle.tgz`;
 console.log(`S3: bundle at ${s3uri} ✓`);

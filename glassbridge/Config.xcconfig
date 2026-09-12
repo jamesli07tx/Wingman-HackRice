@@ -8,8 +8,8 @@
 // AT-INTEGRATION: INTEGRATION-DAY: human copies Config.local.xcconfig.example → Config.local.xcconfig, fills CORTEX_URL and CORTEX_WS_URL with the real Fly URLs (keep the /ws/device path), sets DEVELOPMENT_TEAM, rebuilds onto the phone.
 // Bundle ID. App IDs are global across Apple teams: if a team cannot register this one, override it locally (e.g. com.hackrice.wingman.<initials>).
 WINGMAN_BUNDLE_ID = com.hackrice.wingman
-CORTEX_URL = https:/$()/REPLACE-ME.fly.dev
-CORTEX_WS_URL = wss:/$()/REPLACE-ME.fly.dev/ws/device
+CORTEX_URL = https:/$()/d3odja6xoowymx.cloudfront.net
+CORTEX_WS_URL = wss:/$()/d3odja6xoowymx.cloudfront.net/ws/device
 // DevHarness (glassbridge/DevHarness/harness.mjs). On a physical phone replace localhost with the Mac's LAN IP.
 DEV_HARNESS_URL = ws:/$()/localhost:8787/ws/device
 // Personal Team ID from Xcode → Settings → Accounts (10 chars). Empty here; set locally.
