@@ -24,6 +24,8 @@ import MWDATDisplay
 
 /// File-scope so the off-main frame path can use it without touching MainActor state.
 private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+/// Likewise: the stream is hvc1, so most frames arrive compressed and need VideoToolbox first.
+private let hevcDecoder = HEVCFrameDecoder()
 
 @MainActor
 final class DATSessionManager: ObservableObject {
@@ -34,6 +36,8 @@ final class DATSessionManager: ObservableObject {
   @Published private(set) var displayState: DisplayState = .stopped
   @Published private(set) var lastError: String?
   @Published private(set) var frameCount = 0
+  /// Frames that ARRIVED from the glasses (before decoding) — proves the link even if decode fails.
+  @Published private(set) var rawFrameCount = 0
 
   // The three callbacks are invoked OFF the main actor, straight from the DAT listener thread, so they are
   // `@Sendable` and are snapshotted into locals at start() time — the listener closures never touch `self`.
@@ -145,7 +149,9 @@ final class DATSessionManager: ObservableObject {
       }
 
       // Camera: raw frames (no HEVC decoding on our side), highest resolution, lowest legal fps — we sample every ~1.75 s anyway.
-      let config = StreamConfiguration(videoCodec: .raw, resolution: .high, frameRate: 2)
+      // Mirrors Meta's CameraAccess sample (hvc1/low/24): HEVC over Bluetooth Classic. `.raw` at .high made the SDK
+      // reach for the Wi-Fi hotspot transport, which a free Personal Team cannot sign (HotspotConfiguration entitlement).
+      let config = StreamConfiguration(videoCodec: .hvc1, resolution: .low, frameRate: 24)
       guard let cam = try s.addCamera(config: config) else { throw DATError.cameraUnavailable }
       camera = cam
       let stream = cam.stream
@@ -157,6 +163,7 @@ final class DATSessionManager: ObservableObject {
 
       stream.statePublisher.listen { [weak self] st in Task { @MainActor in self?.streamState = st } }.store(in: sessionBag)
       stream.videoFramePublisher.listen { [weak self] frame in
+        Task { @MainActor in self?.rawFrameCount += 1 }
         guard let img = Self.cgImage(from: frame) else { return }
         Task { @MainActor in self?.frameCount += 1 }
         onFrame?(img)                                   // off-main by design: never block the DAT thread
@@ -203,7 +210,12 @@ final class DATSessionManager: ObservableObject {
       let ci = CIImage(cvPixelBuffer: pb)
       return ciContext.createCGImage(ci, from: ci.extent)
     }
-    return frame.makeUIImage()?.cgImage       // fallback if the buffer is not a pixel buffer
+    // hvc1: compressed, so there is no image buffer — VideoToolbox has to decode it first.
+    if let fd = CMSampleBufferGetFormatDescription(frame.sampleBuffer),
+       CMFormatDescriptionGetMediaSubType(fd) == kCMVideoCodecType_HEVC {
+      return hevcDecoder.decode(frame.sampleBuffer)
+    }
+    return frame.makeUIImage()?.cgImage       // fallback if the buffer is neither a pixel buffer nor HEVC
   }
 }
 

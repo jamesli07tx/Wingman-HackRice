@@ -312,14 +312,14 @@ final class BridgeController: ObservableObject {
       }
       guard started else { spikeResult = "SPIKE FAIL: start() timed out (session=\(dat.sessionState))"; return }
       let start = Date()
-      while dat.frameCount == 0 && Date().timeIntervalSince(start) < 20 { try await Task.sleep(nanoseconds: 200_000_000) }
-      guard dat.frameCount > 0 else { spikeResult = "SPIKE FAIL: no camera frame within 20 s (stream=\(dat.streamState)) \(dat.lastError ?? "")"; return }
+      while dat.rawFrameCount == 0 && Date().timeIntervalSince(start) < 20 { try await Task.sleep(nanoseconds: 200_000_000) }
+      guard dat.rawFrameCount > 0 else { spikeResult = "SPIKE FAIL: no camera frame within 20 s (stream=\(dat.streamState)) \(dat.lastError ?? "")"; return }
       guard let d = dat.display else { spikeResult = "SPIKE FAIL: display not attached \(dat.lastError ?? "")"; return }
       let r = HudRendererBox(display: d, minGapMs: 500)
       r.render(HudCard(cardId: "spike", seq: 1, kind: .hint, title: "Wingman", subtitle: "hello, world",
-                       lines: ["camera stream: OK (\(dat.frameCount) frames)", "display: sent"], footer: "hour-zero spike"))
+                       lines: ["camera stream: OK (\(dat.rawFrameCount) frames)", "decoded: \(dat.frameCount)", "display: sent"], footer: "hour-zero spike"))
       try await Task.sleep(nanoseconds: 3_000_000_000)
-      spikeResult = "SPIKE OK: \(dat.frameCount) frames + card on lens? (check glasses) display=\(dat.displayState) \(dat.lastError ?? "")"
+      spikeResult = "SPIKE OK: \(dat.rawFrameCount) frames arrived, \(dat.frameCount) decoded + card on lens? (check glasses) display=\(dat.displayState) \(dat.lastError ?? "")"
     } catch {
       spikeResult = "SPIKE FAIL: \(error.localizedDescription)"
     }

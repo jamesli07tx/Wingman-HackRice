@@ -12,6 +12,7 @@
 		2D15653EBD475A19CD4B599F /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3A06EC881660F69955A32CF4 /* MWDATCore */; };
 		439BCBEA8EA2A7A130F82AA0 /* ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D346CE90D2263A955B0548 /* ConfigTests.swift */; };
 		5991DB0D1B49D041A4AB1F48 /* HudRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0B19928FD4A4A9D1E5BA67 /* HudRenderer.swift */; };
+		644749E5C2D9FD9134F00B15 /* HEVCFrameDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB6997088320169560A4446B /* HEVCFrameDecoder.swift */; };
 		6E327B0C3711E94CF987960A /* BridgeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */; };
 		77A9F5FB014A699F5E98461C /* MWDATDisplay in Frameworks */ = {isa = PBXBuildFile; productRef = 051F88B26B24B66896A7301A /* MWDATDisplay */; };
 		7811386F5ADEAB7B3C1E1E12 /* FrameSamplerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F99647213394E553B9B06A1 /* FrameSamplerTests.swift */; };
@@ -60,11 +61,12 @@
 		A4E2559DD38650D0279ED945 /* DATSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DATSessionManager.swift; sourceTree = "<group>"; };
 		AB0B19928FD4A4A9D1E5BA67 /* HudRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HudRenderer.swift; sourceTree = "<group>"; };
 		B905996BC4B5066EF1676CE4 /* FrameSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSampler.swift; sourceTree = "<group>"; };
+		CB6997088320169560A4446B /* HEVCFrameDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HEVCFrameDecoder.swift; sourceTree = "<group>"; };
 		DCC25DB79E1DE6F8F326AF89 /* LinkClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkClient.swift; sourceTree = "<group>"; };
 		E21C50607EFEF51382155EA3 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		F2FE628C0697A064C96F62AF /* Wingman.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Wingman.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeController.swift; sourceTree = "<group>"; };
-		"TEMP_B72D39B7-7120-451C-9F99-4FAEDFE22F2E" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		"TEMP_9F456F1C-7CC3-4CF3-AEFB-E70B557F7FDF" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -115,6 +117,7 @@
 				00B1743B6CEFEFAD09B8640D /* CortexSocket.swift */,
 				A4E2559DD38650D0279ED945 /* DATSessionManager.swift */,
 				B905996BC4B5066EF1676CE4 /* FrameSampler.swift */,
+				CB6997088320169560A4446B /* HEVCFrameDecoder.swift */,
 				AB0B19928FD4A4A9D1E5BA67 /* HudRenderer.swift */,
 				9DE643D98754CE9814885F3C /* Keychain.swift */,
 				DCC25DB79E1DE6F8F326AF89 /* LinkClient.swift */,
@@ -133,10 +136,10 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		"TEMP_3C6227F4-F768-4FE8-A700-30E60043E863" /* glassbridge */ = {
+		"TEMP_4DCDC3D0-05E1-42FD-9988-150889AF41A6" /* glassbridge */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_B72D39B7-7120-451C-9F99-4FAEDFE22F2E" /* Config.xcconfig */,
+				"TEMP_9F456F1C-7CC3-4CF3-AEFB-E70B557F7FDF" /* Config.xcconfig */,
 			);
 			path = glassbridge;
 			sourceTree = "<group>";
@@ -238,6 +241,7 @@
 				7B95AC42F2B040925A25E17D /* CortexSocket.swift in Sources */,
 				83FC20D913FEF067839B92EE /* DATSessionManager.swift in Sources */,
 				7AE3868FED6F5D978CACF325 /* FrameSampler.swift in Sources */,
+				644749E5C2D9FD9134F00B15 /* HEVCFrameDecoder.swift in Sources */,
 				5991DB0D1B49D041A4AB1F48 /* HudRenderer.swift in Sources */,
 				E9CF1EF44C122606783F2519 /* Keychain.swift in Sources */,
 				28EFD650701818507AD3479B /* LinkClient.swift in Sources */,
@@ -330,7 +334,7 @@
 		};
 		9D6513D9C82CCE7BD3D4DAB1 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_B72D39B7-7120-451C-9F99-4FAEDFE22F2E" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_9F456F1C-7CC3-4CF3-AEFB-E70B557F7FDF" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -395,7 +399,7 @@
 		};
 		DABFDCF87C106D2CAF6C5A18 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_B72D39B7-7120-451C-9F99-4FAEDFE22F2E" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_9F456F1C-7CC3-4CF3-AEFB-E70B557F7FDF" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
