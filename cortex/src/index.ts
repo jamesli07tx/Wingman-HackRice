@@ -6,8 +6,15 @@
 //   SessionOrchestrator, DashboardHub, rest routes. Constructor injection
 //   only, per DESIGN.md §7 (poor-man's DI).
 
-import "dotenv/config";
+import dotenv from "dotenv";
+import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
+
+// Load root .env when present (deploys); fall back to the local key drop
+// env.template (gitignored — was exposed once, keys being rotated). Tooling on
+// this machine cannot write .env directly, hence the fallback.
+dotenv.config();
+dotenv.config({ path: fileURLToPath(new URL("../../env.template", import.meta.url)) });
 
 const app = Fastify({ logger: true });
 

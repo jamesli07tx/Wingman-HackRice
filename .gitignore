@@ -5,6 +5,8 @@ node_modules/
 .env
 .env.*
 !.env.example
+# local key drop — real secrets, NEVER commit (was exposed in one pushed commit; rotate keys)
+env.template
 dist/
 .next/
 .vercel/
