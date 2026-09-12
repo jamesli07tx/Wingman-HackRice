@@ -88,6 +88,7 @@ final class BridgeController: ObservableObject {
   private let keepalive = AudioKeepalive()
   private let battery = BatteryMonitor()
   /// FIFO: Cortex may have more than one capture_photo outstanding, and DAT's photo callback carries no reqId.
+  private var foregroundObserver: NSObjectProtocol?
   private var pendingPhotoReqIds: [String] = []
   /// The in-flight arm (connect + startCamera); cancelled and awaited so two arms can never race inside DAT.
   private var armTask: Task<Void, Never>?
@@ -109,6 +110,10 @@ final class BridgeController: ObservableObject {
   init() {
     // The harness is a per-launch dev opt-in: never restore a stale `true` when a real Cortex URL is configured
     // (a persisted toggle from a harness session would silently dial the dead tunnel and show "disconnected").
+    foregroundObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+      guard let self, case .linked = self.linkState else { return }
+      self.socket?.connect()   // idempotent: no-op while a task is open; cuts the backoff wait short after unlock
+    }
     useDevHarness = Config.isCortexConfigured ? false : (UserDefaults.standard.object(forKey: "useDevHarness") as? Bool ?? false)
     keepLensAwake = UserDefaults.standard.object(forKey: "keepLensAwake") as? Bool ?? true
     if let id = Keychain.get(Keychain.deviceIdKey), Keychain.get(Keychain.deviceTokenKey) != nil { linkState = .linked(deviceId: id) }
@@ -364,6 +369,7 @@ final class BridgeController: ObservableObject {
         return
       }
       startWatchdog()      // watches the stream for as long as the connection lives; fresh attempt counter
+      keepalive.start()    // Spotify-style background lifetime follows the glasses connection, not just the session
     } catch {
       lastError = "Glasses: \(error.localizedDescription)"
     }
@@ -436,6 +442,7 @@ final class BridgeController: ObservableObject {
     reconnectAttempt = 0
     reconnectStatus = nil
     renderer = nil
+    keepalive.stop()
     #if canImport(MWDATDisplay)
     playgroundShown = false
     #endif
@@ -595,7 +602,11 @@ final class BridgeController: ObservableObject {
     sessionId = nil
     pendingPhotoReqIds.removeAll()
     sampler.stop()
+    #if canImport(MWDATCore)
+    if dat?.isConnected != true { keepalive.stop() }   // stays on while the glasses are connected
+    #else
     keepalive.stop()
+    #endif
     stopTestFrames()
     // The camera stream is NOT stopped: it belongs to the connection (see connectGlasses), and sampler.stop()
     // above already drops every frame before it is encoded. Stopping it here would drop the hotspot.
