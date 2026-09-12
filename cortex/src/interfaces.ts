@@ -63,6 +63,11 @@ export interface SceneGateApi {
   flightDone(sessionId: string): void;
   /** Start the D13 cooldown for a company that was just presented. */
   startCooldown(sessionId: string, companyId: string): void;
+  /** Optional consult: true while companyId is inside its D13 cooldown window.
+   *  The orchestrator uses it to drop a re-identification of company A after
+   *  the card has already moved on to company B. Optional so simple fakes
+   *  stay valid. */
+  isCooledDown?(sessionId: string, companyId: string): boolean;
   reset(sessionId: string): void;
 }
 

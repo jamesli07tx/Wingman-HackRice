@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+/* Dark-first, phone-usable (~400px). One surface scale, one accent. */
+@theme {
+  --color-ink: #07090c;
+  --color-surface: #0e1116;
+  --color-surface-2: #151a21;
+  --color-edge: #232a34;
+  --color-accent: #5eead4;
+  --color-accent-dim: #0f3b36;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-ink);
+  color: #e7ecf3;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+}
+
+/* Feed autoscroll container */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-edge) transparent;
+}
