@@ -39,6 +39,7 @@ Wants=network-online.target
 
 [Service]
 WorkingDirectory=/opt/wingman
+EnvironmentFile=/opt/wingman/.env
 ExecStart=/usr/local/bin/pnpm -F @wingman/cortex start
 Restart=always
 RestartSec=3

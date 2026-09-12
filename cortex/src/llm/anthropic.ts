@@ -17,8 +17,14 @@ import type { z } from "zod";
 export const OPUS = "claude-opus-5";
 export const HAIKU = "claude-haiku-4-5";
 
-// Resolves ANTHROPIC_API_KEY from the environment (root .env is loaded in index.ts).
-export const client = new Anthropic();
+// Resolves ANTHROPIC_API_KEY from the environment LAZILY. A module-level `new Anthropic()` ran at import
+// time — before index.ts had loaded the root .env — so every deployment without the key already in the
+// process environment failed with "Could not resolve authentication method" on the first LLM call.
+let _client: Anthropic | undefined;
+export function client(): Anthropic {
+  if (!_client) _client = new Anthropic();
+  return _client;
+}
 
 export type Effort = "low" | "medium" | "high";
 
@@ -105,7 +111,7 @@ export async function gateClassify<S extends z.ZodType>(opts: {
   const isHaiku = model.includes("haiku");
   const startedAt = Date.now();
   const response = await withRetry(() =>
-    client.beta.messages.create({
+    client().beta.messages.create({
       model,
       max_tokens: isHaiku ? 128 : 512,
       ...(model === OPUS ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}),
@@ -152,7 +158,7 @@ export async function opusParse<S extends z.ZodType>(opts: {
   cacheSystem?: boolean;
 }): Promise<z.infer<S>> {
   const response = await withRetry(() =>
-    client.beta.messages.create({
+    client().beta.messages.create({
       model: OPUS,
       max_tokens: opts.maxTokens ?? 2048,
       betas: ["server-side-fallback-2026-07-01"],
