@@ -10,3 +10,4 @@ DerivedData/
 Config.local.xcconfig
 DevHarness/node_modules/
 DevHarness/frames/
+DevHarness/package-lock.json
