@@ -28,8 +28,17 @@ enum Config {
   static var devHarnessWSURL: URL { URL(string: string("DEV_HARNESS_URL", default: "ws://localhost:8787/ws/device"))! }
   /// HTTP origin of the harness (it serves /api/devices/claim on the same port), derived from the WS URL.
   static var devHarnessHTTPURL: URL { httpOrigin(of: devHarnessWSURL) }
-  /// False while Config.xcconfig still holds the REPLACE-ME placeholder → default to DevHarness.
-  static var isCortexConfigured: Bool { !cortexWSURL.absoluteString.contains(placeholderHost) }
+  /// False while Config.xcconfig still holds the REPLACE-ME placeholder, or while either URL is
+  /// host-less → default to DevHarness. Host-less is the common xcconfig footgun: writing
+  /// `CORTEX_WS_URL = wss://real.fly.dev/ws/device` without the `/$()/` trick makes xcconfig treat
+  /// everything from `//` on as a comment, so the plist gets the bare string `wss:` — which
+  /// `URL(string:)` happily accepts with a nil host. Dialing that silently fails; DevHarness is safer.
+  static func isConfigured(_ url: URL) -> Bool {
+    guard let host = url.host, !host.isEmpty else { return false }
+    return !url.absoluteString.contains(placeholderHost)
+  }
+
+  static var isCortexConfigured: Bool { isConfigured(cortexWSURL) && isConfigured(cortexURL) }
 
   static func httpOrigin(of wsURL: URL) -> URL {
     var c = URLComponents(url: wsURL, resolvingAgainstBaseURL: false)!
