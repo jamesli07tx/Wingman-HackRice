@@ -1,0 +1,53 @@
+# Wingman employer corpus (DESIGN.md D6 — "swap-a-fair = swap this CSV").
+#
+# Columns: companyId,name,aliases,tier,careersUrl
+#   companyId  stable slug, lowercase [a-z0-9-], primary key in Supabase `companies`
+#   name       display name — what a student calls the company
+#   aliases    |-separated; every string the identify prompt should accept for this booth
+#   tier       "sponsor" (HackRice 16 sponsor) | "marquee" (the always-on 30)
+#   careersUrl real careers page; enrich.ts fetches this to ground the card
+#
+# Lines starting with '#' and blank lines are ignored. No quoted fields — do not
+# put a comma inside any cell (use '|' inside aliases, rephrase elsewhere).
+#
+# HackRice 16 sponsor list is still unpublished. When it drops, P3 APPENDS rows
+# below with tier=sponsor and re-runs `pnpm -F @wingman/corpus ingest && ... enrich`.
+# Example of the row shape to append (leave commented until the list is real):
+# hackrice-sponsor-example,Example Sponsor Co,ESC|Example Sponsor,sponsor,https://example.com/careers
+#
+companyId,name,aliases,tier,careersUrl
+google,Google,Alphabet|Google LLC|Google Cloud,marquee,https://www.google.com/about/careers/applications/
+microsoft,Microsoft,MSFT|Microsoft Corporation|Azure,marquee,https://careers.microsoft.com/
+amazon,Amazon,AWS|Amazon Web Services|Amazon.com,marquee,https://www.amazon.jobs/
+apple,Apple,Apple Inc|Apple Computer,marquee,https://www.apple.com/careers/us/
+meta,Meta,Facebook|Meta Platforms|Instagram|Reality Labs,marquee,https://www.metacareers.com/
+nvidia,NVIDIA,Nvidia|NVDA|NVIDIA Corporation,marquee,https://www.nvidia.com/en-us/about-nvidia/careers/
+openai,OpenAI,Open AI|ChatGPT,marquee,https://openai.com/careers/
+anthropic,Anthropic,Claude|Anthropic PBC,marquee,https://www.anthropic.com/careers
+stripe,Stripe,Stripe Inc|Stripe Payments,marquee,https://stripe.com/jobs
+databricks,Databricks,Databricks Inc|Lakehouse,marquee,https://www.databricks.com/company/careers
+cloudflare,Cloudflare,CF|Cloudflare Inc,marquee,https://www.cloudflare.com/careers/
+datadog,Datadog,Datadog Inc|DataDog|DDOG,marquee,https://careers.datadoghq.com/
+figma,Figma,Figma Inc,marquee,https://www.figma.com/careers/
+ramp,Ramp,Ramp Business Corporation,marquee,https://ramp.com/careers
+palantir,Palantir,Palantir Technologies|PLTR|Foundry,marquee,https://www.palantir.com/careers/
+# Capital One + Goldman Sachs were HackRice 15 premiere sponsors — kept at
+# tier=marquee until the HackRice 16 list confirms them; flip to sponsor then.
+capitalone,Capital One,CapOne|C1|Capital One Financial,marquee,https://www.capitalonecareers.com/
+goldmansachs,Goldman Sachs,GS|Goldman|Goldman Sachs Group,marquee,https://www.goldmansachs.com/careers
+jpmorgan,JPMorgan Chase,JPMC|JP Morgan|JPMorgan|Chase,marquee,https://careers.jpmorgan.com/
+bloomberg,Bloomberg,Bloomberg LP|Bloomberg Engineering,marquee,https://www.bloomberg.com/company/careers/
+janestreet,Jane Street,Jane St|JS Capital|Jane Street Capital,marquee,https://www.janestreet.com/join-jane-street/
+citadel,Citadel,Citadel LLC|Citadel Securities,marquee,https://www.citadel.com/careers/
+spacex,SpaceX,Space X|Space Exploration Technologies|Starlink,marquee,https://www.spacex.com/careers/
+tesla,Tesla,Tesla Motors|Tesla Inc|TSLA,marquee,https://www.tesla.com/careers
+nasa-jsc,NASA Johnson Space Center,NASA|JSC|NASA JSC|Johnson Space Center,marquee,https://www.nasa.gov/careers/
+texasinstruments,Texas Instruments,TI|Texas Instruments Incorporated,marquee,https://careers.ti.com/
+dell,Dell Technologies,Dell|Dell EMC|Dell Technologies Inc,marquee,https://jobs.dell.com/
+hpe,Hewlett Packard Enterprise,HPE|Hewlett-Packard Enterprise,marquee,https://careers.hpe.com/
+chevron,Chevron,Chevron Corporation|CVX,marquee,https://careers.chevron.com/
+shell,Shell,Shell plc|Royal Dutch Shell|Shell USA,marquee,https://www.shell.com/careers.html
+exxonmobil,ExxonMobil,Exxon|Exxon Mobil|Mobil|ExxonMobil Corporation,marquee,https://corporate.exxonmobil.com/careers
+oxy,Occidental Petroleum,Oxy|Occidental|OXY,marquee,https://www.oxy.com/careers/
+slb,SLB,Schlumberger|SLB Limited,marquee,https://careers.slb.com/
+halliburton,Halliburton,Halliburton Company|HAL,marquee,https://jobs.halliburton.com/
