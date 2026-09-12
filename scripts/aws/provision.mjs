@@ -144,6 +144,7 @@ if (instance) {
   const ami = aws(["ssm", "get-parameter", "--name",
     "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"]).Parameter.Value;
   const userData = readFileSync(fileURLToPath(new URL("user-data.sh", import.meta.url)), "utf8")
+    .replace(/\r\n/g, "\n") // Windows checkout CRLF would break bash on the instance
     .replaceAll("__S3_BUNDLE__", s3uri)
     .replaceAll("__REGION__", REGION);
   const udFile = join(tmp, "user-data.sh");
