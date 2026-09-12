@@ -38,6 +38,11 @@ final class BridgeController: ObservableObject {
   @Published private(set) var testFramesRunning = false
   /// dat.streamState == .streaming, mirrored as one Bool for the UI. Derived in the DAT change forwarder below.
   @Published private(set) var cameraReady = false
+  /// Force-reconnect state (StatusView step 2). An "episode" is one run of consecutive automatic recoveries: it
+  /// ends after 30 s of healthy streaming, or when the user taps Force reconnect. At most 3 automatic tries.
+  @Published private(set) var reconnectAttempt = 0
+  @Published private(set) var reconnectStatus: String?
+  @Published private(set) var reconnecting = false
   /// A render wakes a sleeping lens, and the lens sleeps ~25 s after the last one (api-notes §6) — so while a
   /// session is armed we re-send the current card every 20 s. Off = let the lens sleep between cards.
   @Published var keepLensAwake: Bool {
@@ -72,6 +77,10 @@ final class BridgeController: ObservableObject {
   /// True while the arm sequence (connect + startCamera) runs — the stream watchdog must not fight it.
   private var arming = false
   private var watchdogTask: Task<Void, Never>?
+  /// When the current unbroken run of .streaming began — 30 s of it ends a recovery episode.
+  private var streamingSince: Date?
+  /// One forceReconnect per `dat.lostConnection` edge, not one per DAT publish.
+  private var lostHandled = false
   private var awakeTimer: Timer?
   private var datChanges: AnyCancellable?
   private var batteryObserver: NSObjectProtocol?
@@ -168,7 +177,17 @@ final class BridgeController: ObservableObject {
   // hardware bring-up — session, display, renderer AND the camera stream — and stays up until Disconnect.
   // Start/Stop then only decide whether sampled frames are sent to Cortex (FrameSampler drops them otherwise).
 
+  /// Connect, and if the bring-up failed, recover once: a failed hotspot join leaves state that makes EVERY
+  /// later Connect fail until the hotspot entry is dropped, so retrying the same way is pointless.
   func connectGlasses() async {
+    #if canImport(MWDATCore)
+    await connectGlassesOnce()
+    guard let dat, DATSessionManager.isHardwareAvailable, !dat.isConnected, !reconnecting else { return }
+    await forceReconnect(reason: "connect failed")
+    #endif
+  }
+
+  private func connectGlassesOnce() async {
     #if canImport(MWDATCore)
     guard let dat, DATSessionManager.isHardwareAvailable, !glassesConnecting else { return }
     guard !dat.isConnected else { return }
@@ -213,13 +232,56 @@ final class BridgeController: ObservableObject {
 
   private func refreshCameraReady() {
     guard let dat else { return }
-    if case .streaming = dat.streamState { cameraReady = true } else { cameraReady = false }
+    if case .streaming = dat.streamState {
+      cameraReady = true
+      streamingSince = streamingSince ?? Date()
+    } else {
+      cameraReady = false
+      streamingSince = nil
+    }
+    // DAT dropped the session under us: isConnected is now a lie, and every later Connect would fail on it.
+    if dat.lostConnection, !lostHandled, !reconnecting, !glassesConnecting {
+      lostHandled = true
+      Task { await self.forceReconnect(reason: "session stopped") }
+    }
+    if !dat.lostConnection { lostHandled = false }
   }
   #endif
+
+  /// The escape hatch from "every Connect fails until force-quit": drop the session AND the glasses' hotspot
+  /// entry (dat.hardReset), then bring the whole thing up again. Capped at 3 per episode so a dead pair of
+  /// glasses cannot loop forever; the user's own Force reconnect always starts a fresh episode.
+  func forceReconnect(reason: String) async {
+    #if canImport(MWDATCore)
+    // Never while a bring-up is in flight: hardReset() would disconnect the session it is still building.
+    guard let dat, DATSessionManager.isHardwareAvailable, !reconnecting, !glassesConnecting else { return }
+    guard reconnectAttempt < 3 else {
+      reconnectStatus = "Reconnect gave up after 3 tries (\(reason)) — tap Force reconnect"
+      return
+    }
+    reconnecting = true
+    defer { reconnecting = false }
+    reconnectAttempt += 1
+    reconnectStatus = "Reconnecting (\(reconnectAttempt)/3): \(reason)"
+    watchdogTask?.cancel(); watchdogTask = nil
+    await dat.hardReset()
+    await connectGlassesOnce()          // starts the camera, and a fresh watchdog with a fresh grace window
+    reconnectStatus = dat.isConnected ? nil : "Reconnect \(reconnectAttempt)/3 failed: \(lastError ?? "unknown")"
+    #endif
+  }
+
+  /// The user tapped Force reconnect: a new episode, so the cap starts over.
+  func userForceReconnect() async {
+    reconnectAttempt = 0
+    reconnectStatus = nil
+    await forceReconnect(reason: "manual")
+  }
 
   func disconnectGlasses() {
     guard !armed else { lastError = "Stop the session first"; return }
     watchdogTask?.cancel(); watchdogTask = nil
+    reconnectAttempt = 0
+    reconnectStatus = nil
     renderer = nil
     #if canImport(MWDATDisplay)
     playgroundShown = false
@@ -295,31 +357,63 @@ final class BridgeController: ObservableObject {
 
   // MARK: stream watchdog (lives with the connection) + lens keepalive (lives with an armed session)
 
-  /// The camera stream dies quietly: the glasses' Wi-Fi hotspot drops and DAT sits in .waitingForDevice with no
-  /// error. Only a stopCamera()/startCamera() cycle re-joins that hotspot, so that is what this does — after
-  /// 6 s of not-streaming, then backing off 6/12/24 s, at most 5 times per connection (the counter resets when
-  /// streaming resumes, and on every explicit Connect, which starts a fresh watchdog).
+  /// The camera stream dies quietly: the glasses' hotspot drops and DAT sits in .waitingForDevice with no error.
+  ///
+  /// The join itself is SLOW, though — well past 10 s after startCamera() — so the watchdog only arms once the
+  /// stream has actually reached .streaming since the last (re)start. Until then it just waits out a 45 s grace:
+  /// restarting the camera mid-join is what knocked the phone off the hotspot and burned every retry at once.
+  /// Armed, a 10 s outage buys a stopCamera()/startCamera() cycle (which re-enters the grace wait), at most
+  /// twice per episode — after that only a full hardReset + reconnect is worth trying. Everything it says goes
+  /// to `reconnectStatus`: the red banner is for errors the operator has to act on.
   private func startWatchdog() {
     #if canImport(MWDATCore)
     guard let dat, DATSessionManager.isHardwareAvailable else { return }
     watchdogTask?.cancel()
     watchdogTask = Task { [weak self] in
-      let backoff = [6.0, 12.0, 24.0]
-      var attempts = 0
+      var restarts = 0
+      var seenStreaming = false          // armed only after the stream has proved it can run
+      var graceStart = Date()
       var downSince: Date?
       while !Task.isCancelled {
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         guard let self, !Task.isCancelled, dat.isConnected else { return }
-        if case .streaming = dat.streamState { downSince = nil; attempts = 0; continue }
-        guard !self.arming, !self.glassesConnecting else { downSince = nil; continue }   // a bring-up is in flight
+
+        if case .streaming = dat.streamState {
+          seenStreaming = true
+          downSince = nil
+          // A healthy stretch ends the recovery episode: fresh caps for whatever goes wrong next.
+          if let since = self.streamingSince, -since.timeIntervalSinceNow >= 30, self.reconnectAttempt > 0 || restarts > 0 {
+            restarts = 0
+            self.reconnectAttempt = 0
+            self.reconnectStatus = nil
+          }
+          continue
+        }
+        guard !self.arming, !self.glassesConnecting, !self.reconnecting else { downSince = nil; continue }
+
+        guard seenStreaming else {
+          // Still joining the glasses' Wi-Fi. Only a no-show past 45 s is a real fault — and the cure for it is
+          // the hotspot entry, not another camera cycle.
+          guard -graceStart.timeIntervalSinceNow >= 45 else { continue }
+          self.reconnectStatus = "Camera never started — reconnecting"
+          Task { await self.forceReconnect(reason: "camera stream stuck") }
+          return
+        }
+
         let since = downSince ?? Date()
         downSince = since
-        guard -since.timeIntervalSinceNow >= backoff[min(attempts, backoff.count - 1)], attempts < 5 else { continue }
-        attempts += 1
-        self.lastError = "Camera stream dropped — reconnecting (\(attempts)/5)"
+        guard -since.timeIntervalSinceNow >= 10 else { continue }
+        guard restarts < 2 else {
+          self.reconnectStatus = "Camera stream stuck — reconnecting"
+          Task { await self.forceReconnect(reason: "camera stream stuck") }
+          return
+        }
+        restarts += 1
+        self.reconnectStatus = "Camera stream dropped — restarting (\(restarts)/2)"
         dat.stopCamera()
-        do { try await dat.startCamera() } catch { self.lastError = "Glasses: \(error.localizedDescription)" }
-        downSince = Date()                                          // next attempt waits out the next backoff
+        do { try await dat.startCamera() }
+        catch { self.reconnectStatus = "Camera restart failed: \(error.localizedDescription)" }
+        seenStreaming = false; downSince = nil; graceStart = Date()   // a restart re-joins the hotspot: grace again
       }
     }
     #endif
