@@ -1,0 +1,8 @@
+{
+  "name": "wingman-devharness",
+  "private": true,
+  "type": "module",
+  "description": "Fake Cortex for GlassBridge (DESIGN_MAC.md §1). Not a pnpm workspace member — run `npm install` here.",
+  "scripts": { "start": "node harness.mjs", "device": "node fake-device.mjs" },
+  "dependencies": { "ws": "^8.18.0" }
+}
