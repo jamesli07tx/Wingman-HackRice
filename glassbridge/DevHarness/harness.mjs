@@ -35,8 +35,8 @@ const SHAPES = {
   status: {},
 };
 function validate(msg) {
+  if (!Object.hasOwn(SHAPES, msg?.type)) return `unknown type ${msg?.type}`;   // msg?. so a literal `null` payload can't throw
   const shape = SHAPES[msg.type];
-  if (!shape) return `unknown type ${msg.type}`;
   for (const [k, t] of Object.entries(shape)) if (typeof msg[k] !== t) return `${msg.type}.${k} should be ${t}, got ${typeof msg[k]}`;
   if (msg.type === "hello" && !["glasses_bridge", "phone_web"].includes(msg.deviceType)) return `bad deviceType ${msg.deviceType}`;
   if ((msg.type === "frame" || msg.type === "photo") && msg.mime !== "image/jpeg") return `mime must be image/jpeg`;
@@ -45,6 +45,8 @@ function validate(msg) {
 }
 
 // ---- DESIGN.md §4.2 example cards, verbatim ----
+// NOTE: the script below deliberately compresses D11's 15 s page-1 hold (and the 12 s rotation) into a few
+// seconds so a dev run shows every card kind quickly. `minDisplaySec` still says 15 — real Cortex owns the hold.
 const company = (seq, page, extraLines = []) => ({
   cardId: "c_007", seq, kind: "company", title: "Stripe",
   subtitle: "Payments infrastructure for the internet",
@@ -83,7 +85,7 @@ wss.on("connection", (ws, req) => {
   if (!token) { log("✗ no token → closing 4401"); return ws.close(4401, "missing token"); }
 
   let seq = 10, lastFrameAt = 0, frames = 0, timers = [], armed = false;
-  const send = (m) => { ws.send(JSON.stringify(m)); log("→", m.type, m.card ? `${m.card.kind} ${m.card.cardId}#${m.card.seq} "${m.card.title}"` : m.reqId ?? m.sessionId ?? m.reason ?? ""); };
+  const send = (m) => { ws.send(JSON.stringify(m)); log("→", m.type, m.card ? `${m.card.kind} ${m.card.cardId}#${m.card.seq} "${m.card.title}"` : m.reqId ?? m.sessionId ?? m.reason ?? m.code ?? ""); };
   const render = (card) => send({ type: "render", card });
   const at = (sec, fn) => timers.push(setTimeout(fn, sec * 1000));
   const endSession = (reason) => { timers.forEach(clearTimeout); timers = []; if (armed) { armed = false; send({ type: "session_end", reason }); } };
@@ -94,7 +96,9 @@ wss.on("connection", (ws, req) => {
     at(10, () => render(pitch(++seq)));
     at(16, () => render(company(++seq, 1)));                                  // rotation: same cardId, higher seq
     at(20, () => send({ type: "capture_photo", reqId: "r_18", quality: "document" }));
+    at(23, () => render({ cardId: "c_scan", seq: ++seq, kind: "scan", title: "Pamphlet", lines: ["Roles: SWE Intern (Summer 2027)", "Deadline: Oct 15"], footer: "Wingman" }));
     at(26, () => send({ type: "error", code: "search_down", message: "harness: sample recoverable error", recoverable: true }));
+    at(26.5, () => render({ cardId: "c_err", seq: ++seq, kind: "error", title: "Search unavailable", lines: ["Showing cached info"], footer: "Wingman" }));
     // burst lands at t=30, but never at/after END_SEC (a short --end would otherwise cut it off); its five
     // timers go in `timers` so endSession/close cancels any still pending (no send-after-close).
     if (BURST) at(Math.max(0, Math.min(30, END_SEC - 3)), () => { for (let i = 0; i < 5; i++) timers.push(setTimeout(() => render({ cardId: "burst", seq: i + 1, kind: "hint", title: `Burst ${i + 1}/5`, lines: ["≤ 1 replace per 500 ms", "last card wins"] }), i * 40)); });
@@ -106,10 +110,11 @@ wss.on("connection", (ws, req) => {
   ws.on("message", (raw) => {
     let msg; try { msg = JSON.parse(raw.toString()); } catch { return log("✗ non-JSON frame"); }
     const err = validate(msg);
-    if (err) return log(`✗ INVALID ${msg.type ?? "?"}: ${err}`);
+    if (err) return log(`✗ INVALID ${msg?.type ?? "?"}: ${err}`);
     switch (msg.type) {
       case "hello": log(`✓ hello ${msg.deviceType} caps=${JSON.stringify(msg.caps)}`); break;
       case "session_start":
+        timers.forEach(clearTimeout); timers = [];   // idempotent: a re-Start must not stack a second copy of the script
         log("✓ session_start → armed"); armed = true; frames = 0; lastFrameAt = 0;
         send({ type: "armed", sessionId: "s_42", config: CONFIG }); script(); break;
       case "session_stop": log("✓ session_stop"); endSession("user_stop"); break;
@@ -126,7 +131,7 @@ wss.on("connection", (ws, req) => {
         const bytes = Buffer.from(msg.dataBase64, "base64");
         log(`✓ photo reqId=${msg.reqId} ${(bytes.length / 1024).toFixed(1)} KB`);
         if (SAVE) fs.writeFileSync(`frames/photo-${msg.reqId}.jpg`, bytes);
-        render(company(++seq, 1, ["Roles: SWE Intern (Summer 2027)", "Deadline: Oct 15"]));   // scan merge
+        if (armed) render(company(++seq, 1, ["Roles: SWE Intern (Summer 2027)", "Deadline: Oct 15"]));   // scan merge (never after session end)
         break;
       }
       case "photo_error": log(`✓ photo_error reqId=${msg.reqId} reason=${msg.reason}`); break;
@@ -134,6 +139,12 @@ wss.on("connection", (ws, req) => {
     }
   });
   ws.on("close", (code) => { log(`WS closed ${code} after ${frames} frames`); timers.forEach(clearTimeout); });
+  ws.on("error", (e) => log("✗ ws error", e.message));   // e.g. ECONNRESET when the phone drops Wi-Fi — must not kill the harness
 });
 
+// e.g. EADDRINUSE: say so in one line, don't stack-trace. `ws` re-emits the http server's error on the
+// WebSocketServer, so BOTH need the handler — the wss one is the listener that actually fires.
+const fatal = (e) => { log("✗ server error", e.message); process.exit(1); };
+server.on("error", fatal);
+wss.on("error", fatal);
 server.listen(PORT, () => log(`DevHarness listening: ws://localhost:${PORT}/ws/device  http://localhost:${PORT}/api/devices/claim  config=${JSON.stringify(CONFIG)}${BURST ? " --burst" : ""}${SAVE ? " --save" : ""}`));

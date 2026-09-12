@@ -18,7 +18,7 @@ ws.on("open", () => {
 });
 ws.on("message", (raw) => {
   const m = JSON.parse(raw.toString());
-  if (m.type === "armed") { log("← armed", m.sessionId, JSON.stringify(m.config)); clearInterval(timer); timer = setInterval(() => send({ type: "frame", seq: ++seq, ts: Date.now(), mime: "image/jpeg", dataBase64: JPEG }), m.config?.frameIntervalMs ?? 1750); }
+  if (m.type === "armed") { log("← armed", m.sessionId, JSON.stringify(m.config)); send({ type: "status", battery: 0.61, note: "fake" }); clearInterval(timer); timer = setInterval(() => send({ type: "frame", seq: ++seq, ts: Date.now(), mime: "image/jpeg", dataBase64: JPEG }), m.config?.frameIntervalMs ?? 1750); }
   else if (m.type === "render") log("← render", m.card.kind, `${m.card.cardId}#${m.card.seq}`, JSON.stringify([m.card.title, m.card.subtitle, ...(m.card.lines ?? []), m.card.footer].filter(Boolean)));
   else if (m.type === "capture_photo") send({ type: "photo", reqId: m.reqId, mime: "image/jpeg", dataBase64: JPEG });
   else if (m.type === "session_end") { log("← session_end", m.reason); clearInterval(timer); ws.close(); }
