@@ -46,6 +46,24 @@ struct StatusView: View {
 
   private var linkStep: some View {
     stepCard(1, "Link to Cortex", "link") {
+      // Where to dial. Set at run time so integration day needs no rebuild; wins over Config.local.xcconfig.
+      HStack(spacing: 8) {
+        TextField("Cortex URL (host or wss://…)", text: $bridge.cortexURLText)
+          .textFieldStyle(.roundedBorder)
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled()
+          .keyboardType(.URL)
+          .font(.footnote)
+        Button("Apply") { bridge.applyCortexURL() }
+          .buttonStyle(.borderedProminent)
+          .tint(bridge.cortexConfigured ? Color.secondary : Color.accentColor)
+      }
+      Text("\(bridge.useDevHarness ? "DevHarness" : "Cortex") · \(bridge.wsURL.absoluteString)")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .truncationMode(.middle)
+
       switch bridge.linkState {
       case .unlinked:
         TextField("6-digit code from dashboard", text: $code)
@@ -56,7 +74,7 @@ struct StatusView: View {
           .buttonStyle(.borderedProminent)
           .controlSize(.large)
           .frame(maxWidth: .infinity)
-          .disabled(code.count != 6)
+          .disabled(code.count != 6 || !bridge.cortexConfigured)
       case let .linked(deviceId):
         HStack {
           pill("Linked · \(deviceId)", .green)
@@ -65,14 +83,13 @@ struct StatusView: View {
         }
       }
 
-      HStack(spacing: 8) {
-        pill("Cortex \(bridge.socketState)",
-             bridge.socketState == .connected ? .green : bridge.socketState == .connecting ? .yellow : .red)
-        Spacer()
-        #if DEBUG
-        Toggle("Use DevHarness", isOn: $bridge.useDevHarness).font(.caption).fixedSize()
-        #endif
+      // Not an error (red banner) — just the next step: no URL yet, or a harness link we dropped for them.
+      if let hint = bridge.cortexHint {
+        Text(hint).font(.caption).foregroundStyle(.secondary)
       }
+
+      pill("Cortex \(bridge.socketState)",
+           bridge.socketState == .connected ? .green : bridge.socketState == .connecting ? .yellow : .red)
 
       banner(.link)
     }
@@ -223,6 +240,10 @@ struct StatusView: View {
       VStack(alignment: .leading, spacing: 12) {
         Text("WS \(bridge.wsURL.absoluteString)").font(.caption2).foregroundStyle(.secondary)
 
+        // The fake Cortex. Out of step 1 on purpose: it must never be the path the demo falls into by default.
+        Toggle("Use DevHarness", isOn: $bridge.useDevHarness).font(.caption)
+        Text(Config.devHarnessWSURL.absoluteString).font(.caption2).foregroundStyle(.secondary)
+
         Button("Run hour-zero spike (camera + display)") { Task { await bridge.runSpike() } }
           .disabled(bridge.armed || bridge.spikeRunning)
         if let r = bridge.spikeResult { Text(r).font(.footnote).foregroundStyle(.secondary) }
@@ -305,7 +326,7 @@ struct StatusView: View {
   private enum Step { case link, glasses, session }
 
   private static func step(for error: String) -> Step {
-    if error.hasPrefix("Claim") { return .link }
+    if error.hasPrefix("Claim") || error.hasPrefix("Cortex URL") { return .link }
     if error.hasPrefix("Glasses") || error.hasPrefix("Registration") || error.hasPrefix("DAT") { return .glasses }
     return .session
   }

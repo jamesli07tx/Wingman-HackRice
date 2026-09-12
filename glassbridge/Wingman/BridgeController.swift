@@ -27,6 +27,8 @@ final class BridgeController: ObservableObject {
   @Published private(set) var armed = false
   @Published private(set) var sessionId: String?
   @Published private(set) var lastError: String?
+  /// Not an error, just the next thing to do ("Set the Cortex URL first") — step 1 shows it in plain grey.
+  @Published private(set) var cortexHint: String?
   @Published private(set) var lastCard: HudCard?
   @Published private(set) var framesSent = 0
   /// The last JPEG handed to Cortex, decoded for the phone screen ("what the glasses see").
@@ -51,6 +53,11 @@ final class BridgeController: ObservableObject {
       if armed { startKeepAwake() } else { awakeTimer?.invalidate(); awakeTimer = nil }
     }
   }
+  /// The Cortex URL as typed in StatusView (step 1). Applied — not live-bound — so a half-typed host never
+  /// becomes the dial target; `applyCortexURL()` is what commits it.
+  @Published var cortexURLText: String = Config.cortexOverride ?? ""
+  /// Debug-only escape hatch now: off unless the operator turns it on in Debug tools. It used to default to
+  /// ON whenever Cortex was unconfigured, which quietly made the harness the demo's real endpoint.
   @Published var useDevHarness: Bool {
     didSet {
       UserDefaults.standard.set(useDevHarness, forKey: "useDevHarness")
@@ -86,7 +93,7 @@ final class BridgeController: ObservableObject {
   private var batteryObserver: NSObjectProtocol?
 
   init() {
-    useDevHarness = UserDefaults.standard.object(forKey: "useDevHarness") as? Bool ?? !Config.isCortexConfigured
+    useDevHarness = UserDefaults.standard.object(forKey: "useDevHarness") as? Bool ?? false
     keepLensAwake = UserDefaults.standard.object(forKey: "keepLensAwake") as? Bool ?? true
     if let id = Keychain.get(Keychain.deviceIdKey), Keychain.get(Keychain.deviceTokenKey) != nil { linkState = .linked(deviceId: id) }
     // FrameSampler invokes `send` on ITS OWN serial queue — hop to main before touching any state here.
@@ -127,8 +134,40 @@ final class BridgeController: ObservableObject {
     if let o = batteryObserver { NotificationCenter.default.removeObserver(o) }
   }
 
+  // Computed, never cached: both re-read Config on every access, so an applied override takes effect at once.
   var restBaseURL: URL { useDevHarness ? Config.devHarnessHTTPURL : Config.cortexURL }
   var wsURL: URL { useDevHarness ? Config.devHarnessWSURL : Config.cortexWSURL }
+
+  /// Integration day without a rebuild: paste the Fly host, tap Apply. Empty clears the override and falls
+  /// back to the build-time xcconfig value.
+  func applyCortexURL() {
+    let raw = cortexURLText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !raw.isEmpty else {
+      Config.cortexOverride = nil
+      cortexURLText = ""
+      lastError = nil
+      reconnectIfLinked()          // re-raises the hint if that leaves us with no URL at all
+      return
+    }
+    guard Config.normalizeOverride(raw) != nil else { lastError = "Cortex URL not understood"; return }
+    Config.cortexOverride = raw
+    lastError = nil
+    // The harness token means nothing to Cortex — sending it would fail authentication with no visible cause.
+    let droppedHarnessLink = linkedToHarness
+    if droppedHarnessLink { unlink() }
+    // A real Cortex URL means we are not talking to the harness. Assigning useDevHarness unconditionally would
+    // re-run its didSet (which stops an armed session), so only touch it when it actually changes.
+    if useDevHarness { useDevHarness = false } else { reconnectIfLinked() }
+    if droppedHarnessLink { cortexHint = "Harness link cleared — link with the dashboard code" }
+  }
+
+  /// A URL to dial: either the Debug harness toggle is on, or Cortex has one (xcconfig or pasted override).
+  var cortexConfigured: Bool { useDevHarness || Config.isCortexConfigured }
+
+  private var linkedToHarness: Bool {
+    if case let .linked(id) = linkState { return id == "dev_harness" }
+    return false
+  }
 
   private func refreshBattery() {
     let b = UIDevice.current.batteryLevel
@@ -160,6 +199,8 @@ final class BridgeController: ObservableObject {
   /// The socket stays open whenever we are linked so a dashboard-initiated Start (armed pushed by Cortex) works.
   private func reconnectIfLinked() {
     socket?.disconnect(); socket = nil
+    cortexHint = nil
+    guard cortexConfigured else { cortexHint = "Set the Cortex URL first"; return }
     guard case .linked = linkState, let token = Keychain.get(Keychain.deviceTokenKey) else { return }
     let s = CortexSocket(url: wsURL, token: token)
     s.onState = { [weak self] st in self?.socketState = st }
@@ -295,6 +336,7 @@ final class BridgeController: ObservableObject {
 
   func start() {
     lastError = nil
+    guard cortexConfigured else { cortexHint = "Set the Cortex URL first"; return }
     guard socket != nil else { lastError = "Link the device first"; return }
     socket?.startSession()          // Cortex answers with `armed` → arm() does the hardware work
   }

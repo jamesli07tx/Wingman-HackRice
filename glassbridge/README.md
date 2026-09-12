@@ -93,9 +93,10 @@ Flags: `--port 8787` · `--interval 1750` (the `frameIntervalMs` pushed in `arme
 `--save` (writes every frame/photo to `DevHarness/frames/`, gitignored).
 
 Phone-side wiring: put the Mac's LAN IP in `Config.local.xcconfig`
-(`DEV_HARNESS_URL = ws:/$()/192.168.1.23:8787/ws/device`), rebuild, and keep Debug →
-**"Use DevHarness"** on (the Debug row also prints the WS URL actually in use). Any 6-digit code links;
-`000000` is reserved to return 404.
+(`DEV_HARNESS_URL = ws:/$()/192.168.1.23:8787/ws/device`), rebuild, and turn on Debug tools →
+**"Use DevHarness"** (Debug-only, and **off by default** — the harness must never be what the demo falls
+into by accident; the rows there print both the harness URL and the WS URL actually in use). Any 6-digit
+code links; `000000` is reserved to return 404.
 
 ### Acceptance checks (DESIGN_MAC.md §2) — all self-contained, no Windows side
 
@@ -157,19 +158,46 @@ Config.xcconfig:8: human copies Config.local.xcconfig.example → Config.local.x
   and CORTEX_WS_URL with the real Fly URLs (keep the /ws/device path), sets DEVELOPMENT_TEAM, rebuilds
   onto the phone.
 DevHarness/harness.mjs:11: nothing to change here — stop using it: turn off "Use DevHarness" in
-  StatusView (or set a real CORTEX_WS_URL).
-Wingman/Config.swift:6: nothing here — values arrive via Config.local.xcconfig (see Config.xcconfig).
-Wingman/CortexSocket.swift:7: swap DEV_HARNESS_URL for CORTEX_WS_URL — BridgeController does this when
-  Config.local.xcconfig holds a real URL and the StatusView "Use DevHarness" toggle is off. Then verify
-  a `hello` with deviceType "glasses_bridge" arrives in Cortex logs after link.
+  StatusView's Debug tools (it is off by default), or just paste a real Cortex URL in step 1.
+Wingman/Config.swift:6: no rebuild needed — paste the Fly host into StatusView's "Cortex URL" field and
+  tap Apply; the xcconfig stays the build-time default.
+Wingman/CortexSocket.swift:7: swap DEV_HARNESS_URL for CORTEX_WS_URL — BridgeController does this as
+  soon as a Cortex URL is applied in step 1 (the "Use DevHarness" toggle lives in Debug tools and is off
+  by default). Then verify a `hello` with deviceType "glasses_bridge" arrives in Cortex logs after link.
 ```
 
 Line numbers shift whenever a header changes — **re-run the greps** rather than trusting the numbers
 above. Drop `--include` to also see the plan doc.
 
+### Integration day (no rebuild)
+
+Step 1 of StatusView reads top to bottom in the order you use it:
+
+1. **Cortex URL** field + **Apply** (the prominent button until a URL is set). Paste the Fly host in any
+   shape the clipboard hands you — `wingman-cortex.fly.dev`, `https://wingman-cortex.fly.dev/`,
+   `wss://wingman-cortex.fly.dev/ws/device` — they all normalise to `https://<host>` +
+   `wss://<host>/ws/device`. `http://`/`ws://` stay insecure, so a laptop Cortex
+   (`http://192.168.1.5:8080`) works too; an empty field clears the override.
+2. The caption under it — **`Cortex · wss://…/ws/device`** (or `DevHarness · …`) — is the target actually
+   in use. Read it before linking.
+3. **6-digit code** from the dashboard + **Link**. Link stays disabled, with the hint *"Set the Cortex URL
+   first"*, until a URL is set: with no URL the app opens no socket at all rather than silently dialing a
+   placeholder.
+4. The **Linked · `<deviceId>`** pill (with Unlink), then the socket pill. Then **Start** in step 3.
+
+Apply stores the value in `UserDefaults` (`cortexURLOverride`), turns DevHarness off and redials the
+socket. If you were linked to the DevHarness (`dev_harness`), applying a Cortex URL **auto-unlinks** —
+the harness token means nothing to Cortex — and says so: *"Harness link cleared — link with the dashboard
+code"*. `Config.local.xcconfig` remains the **build-time default**; the pasted value just wins over it,
+so a 7-day re-signing rebuild still comes up pointing at the right Cortex.
+
+While streaming, the phone's Wi-Fi is the glasses' own hotspot, so Cortex traffic rides **cellular** —
+venue Wi-Fi is never used (and never worth debugging on the day).
+
 **Integration-day sequence (DESIGN_MAC.md §0.6, human-driven, ~15 min):** ① Windows side deploys Cortex
-→ human gets the `wss://…fly.dev` URL. ② Human sets it in `glassbridge/Config.local.xcconfig`, rebuilds
-onto the phone. ③ Dashboard shows the 6-digit link code → typed into GlassBridge →
+→ human gets the `wss://…fly.dev` URL. ② Human pastes it into the app's **Cortex URL** field → Apply (no
+rebuild; `Config.local.xcconfig` is only the build-time default), and checks the caption reads
+`Cortex · wss://…`. ③ Dashboard shows the 6-digit link code → typed into GlassBridge →
 `/api/devices/claim`. ④ Start from either end → M2 checks (DESIGN.md §6).
 
 Also needed from the Windows side (§3): the dashboard with the link code, and `/feed` as the window
