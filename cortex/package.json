@@ -1,0 +1,32 @@
+{
+  "name": "@wingman/cortex",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "fixtures": "tsx fixtures/generate.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "@clerk/backend": "latest",
+    "@fastify/multipart": "^9.0.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "@wingman/shared": "workspace:*",
+    "dotenv": "^16.4.0",
+    "fastify": "^5.0.0",
+    "ws": "^8.18.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "sharp": "^0.34.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

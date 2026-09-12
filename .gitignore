@@ -1,0 +1,13 @@
+# MERGE CONTRACT (DESIGN_WINDOWS.md §0): root .gitignore covers the Node side
+# only. Xcode/Swift ignore rules live in glassbridge/.gitignore (Mac-owned) —
+# never add them here.
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+.next/
+.vercel/
+*.tsbuildinfo
+coverage/
+*.log

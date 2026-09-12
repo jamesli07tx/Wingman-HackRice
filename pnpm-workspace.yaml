@@ -1,0 +1,10 @@
+# MERGE CONTRACT (DESIGN_WINDOWS.md §0): glassbridge/ is deliberately NOT a
+# workspace package — it is Swift, owned by the Mac build. Never add it here.
+packages:
+  - shared
+  - cortex
+  - console
+  - corpus
+allowBuilds:
+  esbuild: true
+  sharp: true
