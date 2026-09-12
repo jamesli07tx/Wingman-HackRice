@@ -297,9 +297,15 @@ export class DeviceGateway {
     });
 
     ws.on("close", () => {
-      if (this.#channels.get(device.deviceId) === channel) {
-        this.#channels.delete(device.deviceId);
+      // A socket this device already replaced (see the top of #onConnection) must not
+      // tear down the LIVE channel's session. Its close can land long after the swap —
+      // ws waits 30 s for a close handshake the peer never answers, and through
+      // CloudFront the old TCP leg lingers — which was ending fresh sessions with "error".
+      if (this.#channels.get(device.deviceId) !== channel) {
+        this.#logger.info("stale device socket closed", { deviceId: device.deviceId });
+        return;
       }
+      this.#channels.delete(device.deviceId);
       this.#logger.info("device disconnected", { deviceId: device.deviceId });
       this.deps.onChannelClose?.(device.deviceId);
       this.deps.events.onDisconnect(device.deviceId);

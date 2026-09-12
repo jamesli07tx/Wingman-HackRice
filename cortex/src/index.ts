@@ -75,7 +75,13 @@ async function wireFullStack(): Promise<void> {
     : ((async () => {
         throw new Error("auth unavailable: CLERK_SECRET_KEY not set");
       }) as unknown as ReturnType<typeof createClerkVerifier>);
-  const hub = new DashboardHub({ verifyToken, logger: app.log });
+  // Module loggers are (msg, meta); pino is (meta, msg) — passing app.log straight
+  // through silently dropped every meta field (sessionId, reason, deviceId…).
+  const log = {
+    info: (msg: string, meta?: Record<string, unknown>) => app.log.info(meta ?? {}, msg),
+    warn: (msg: string, meta?: Record<string, unknown>) => app.log.warn(meta ?? {}, msg),
+  };
+  const hub = new DashboardHub({ verifyToken, logger: log });
 
   // Identify corpus snapshot (boot-time; re-run `corpus ingest/enrich` + restart to refresh).
   const { data: corpusRows, error: corpusErr } = await supabase
@@ -126,7 +132,7 @@ async function wireFullStack(): Promise<void> {
     scan,
     getProfile,
     dashboard: hub,
-    logger: app.log,
+    logger: log,
   });
   orchRef = orchestrator;
 
@@ -135,7 +141,7 @@ async function wireFullStack(): Promise<void> {
     events: orchestrator,
     onChannelOpen: (ch) => orchestrator.registerChannel(ch),
     onChannelClose: (deviceId) => orchestrator.unregisterChannel(deviceId),
-    logger: app.log,
+    logger: log,
   });
 
   // ONE upgrade router (runtime-agent note #6): try each path handler, destroy
@@ -152,7 +158,7 @@ async function wireFullStack(): Promise<void> {
 
   if (process.env.MOCK_DEVICE === "1") {
     // INTEGRATION: fixture E2E — the whole pipeline with zero hardware.
-    const mock = new MockDeviceAdapter({ events: orchestrator, logger: app.log });
+    const mock = new MockDeviceAdapter({ events: orchestrator, logger: log });
     orchestrator.registerChannel(mock);
     app.addHook("onListen", async () => {
       await mock.start();

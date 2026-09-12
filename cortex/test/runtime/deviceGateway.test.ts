@@ -3,8 +3,13 @@
 // tested directly: unknown fields are ignored, unknown types dropped, a bad frame is
 // never fatal.
 
-import { describe, expect, it } from "vitest";
-import { hashDeviceToken, parseDeviceMessage } from "../../src/gateway/DeviceGateway.js";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { WebSocket } from "ws";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DeviceGateway, hashDeviceToken, parseDeviceMessage } from "../../src/gateway/DeviceGateway.js";
+import type { GatewayEvents } from "../../src/interfaces.js";
+import { makeFakeSupabase } from "../services/fakes.js";
 
 describe("parseDeviceMessage (lenient decode)", () => {
   it("accepts hello and ignores unknown fields", () => {
@@ -66,6 +71,77 @@ describe("parseDeviceMessage (lenient decode)", () => {
   it("tolerates a frame missing seq/ts (lenient: fills defaults)", () => {
     const msg = parseDeviceMessage(JSON.stringify({ type: "frame", dataBase64: "AAA" }));
     expect(msg).toMatchObject({ type: "frame", seq: 0, mime: "image/jpeg", dataBase64: "AAA" });
+  });
+});
+
+// Reconnect semantics over a real socket pair. The gateway keeps ONE channel per device;
+// a reconnect replaces the old socket, whose close event may arrive much later (ws waits
+// 30 s for an unanswered close handshake; CloudFront keeps the old leg alive). That late
+// close must not be reported as the device disconnecting — it was ending live sessions.
+describe("DeviceGateway reconnect", () => {
+  const cleanups: (() => void)[] = [];
+  afterEach(() => {
+    for (const fn of cleanups.splice(0)) fn();
+  });
+
+  async function boot() {
+    const supabase = makeFakeSupabase((table) =>
+      table === "devices"
+        ? { data: [{ device_id: "dev_1", user_id: "u_1", device_type: "glasses_bridge", name: "g" }], error: null }
+        : { data: null, error: null },
+    );
+    const events: GatewayEvents = {
+      onDeviceSessionStart: vi.fn(),
+      onDeviceSessionStop: vi.fn(),
+      onFrame: vi.fn(),
+      onPhoto: vi.fn(),
+      onPhotoError: vi.fn(),
+      onStatus: vi.fn(),
+      onDisconnect: vi.fn(),
+    };
+    const onChannelClose = vi.fn();
+    const gateway = new DeviceGateway({
+      supabase: supabase.client,
+      events,
+      onChannelClose,
+      logger: { info: () => {}, warn: () => {} },
+    });
+    const server = createServer();
+    gateway.attach(server);
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const { port } = server.address() as AddressInfo;
+    cleanups.push(() => {
+      gateway.close();
+      server.close();
+    });
+    const connect = () =>
+      new Promise<WebSocket>((resolve, reject) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/device?token=t`);
+        ws.once("open", () => resolve(ws));
+        ws.once("error", reject);
+      });
+    const closed = (ws: WebSocket) => new Promise<void>((r) => ws.once("close", () => r()));
+    return { gateway, events, onChannelClose, connect, closed };
+  }
+
+  it("a replaced socket's late close does not disconnect the live channel", async () => {
+    const { gateway, events, onChannelClose, connect, closed } = await boot();
+    const first = await connect();
+    const firstClosed = closed(first);
+    const second = await connect();
+    await firstClosed; // server closed the old socket when the new one arrived
+
+    expect(gateway.channelFor("dev_1")).toBeDefined();
+    expect(events.onDisconnect).not.toHaveBeenCalled();
+    expect(onChannelClose).not.toHaveBeenCalled();
+
+    const secondClosed = closed(second);
+    second.close();
+    await secondClosed;
+    await vi.waitFor(() => expect(events.onDisconnect).toHaveBeenCalledTimes(1));
+    expect(events.onDisconnect).toHaveBeenCalledWith("dev_1");
+    expect(onChannelClose).toHaveBeenCalledTimes(1);
+    expect(gateway.channelFor("dev_1")).toBeUndefined();
   });
 });
 
