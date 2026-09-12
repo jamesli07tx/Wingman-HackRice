@@ -93,12 +93,15 @@ struct StatusView: View {
           }
           HStack(spacing: 6) {
             pill("Display \(dat.displayState)", isDisplayStarted(dat) ? .green : .secondary)
-            pill("Camera \(dat.streamState)", isStreaming(dat) ? .green : .secondary)
+            pill("Camera \(dat.streamState)", bridge.cameraReady ? .green : .secondary)
           }
           // The camera transport only works once the phone has joined the glasses' own hotspot.
           pill(dat.wifiSSID.map { "Hotspot: \($0)" } ?? "Hotspot: off", onGlassesHotspot(dat) ? .green : .secondary)
         }
         Text(dat.deviceName ?? "no device").font(.footnote).foregroundStyle(.secondary)
+        // The camera is part of the connection now — Start/Stop only gate what goes up to Cortex.
+        Text("Camera streams while connected; Start only begins sending to Cortex.")
+          .font(.caption).foregroundStyle(.secondary)
 
         if !isRegistered(dat) {
           primary("Register with Meta AI") { Task { await dat.register() } }
@@ -150,6 +153,16 @@ struct StatusView: View {
       }
 
       Toggle("Keep lens awake", isOn: $bridge.keepLensAwake).font(.footnote)
+
+      if let frame = bridge.lastFrame {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("What the glasses see (last frame sent)").font(.caption).foregroundStyle(.secondary)
+          Image(uiImage: frame)
+            .resizable().scaledToFit()
+            .frame(maxHeight: 180)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+      }
 
       Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
         GridRow {
@@ -295,7 +308,6 @@ struct StatusView: View {
   // `if case` rather than `==`: only DeviceSessionState is documented Equatable (docs/dat-0.9.0-api-notes.md §3),
   // and pattern matching works whatever the DAT enums' payloads turn out to be.
   #if canImport(MWDATCore)
-  private func isStreaming(_ dat: DATSessionManager) -> Bool { if case .streaming = dat.streamState { return true }; return false }
   private func isDisplayStarted(_ dat: DATSessionManager) -> Bool { if case .started = dat.displayState { return true }; return false }
   private func isRegistered(_ dat: DATSessionManager) -> Bool { if case .registered = dat.registration { return true }; return false }
   /// The glasses' hotspot announces itself as "Meta RB Display …" — any other SSID means the join has not happened.

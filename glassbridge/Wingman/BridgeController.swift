@@ -29,11 +29,15 @@ final class BridgeController: ObservableObject {
   @Published private(set) var lastError: String?
   @Published private(set) var lastCard: HudCard?
   @Published private(set) var framesSent = 0
+  /// The last JPEG handed to Cortex, decoded for the phone screen ("what the glasses see").
+  @Published private(set) var lastFrame: UIImage?
   @Published private(set) var spikeResult: String?
   @Published private(set) var spikeRunning = false
   /// connectGlasses() is in flight — StatusView disables the button and spins.
   @Published private(set) var glassesConnecting = false
   @Published private(set) var testFramesRunning = false
+  /// dat.streamState == .streaming, mirrored as one Bool for the UI. Derived in the DAT change forwarder below.
+  @Published private(set) var cameraReady = false
   /// A render wakes a sleeping lens, and the lens sleeps ~25 s after the last one (api-notes §6) — so while a
   /// session is armed we re-send the current card every 20 s. Off = let the lens sleep between cards.
   @Published var keepLensAwake: Bool {
@@ -78,10 +82,13 @@ final class BridgeController: ObservableObject {
     if let id = Keychain.get(Keychain.deviceIdKey), Keychain.get(Keychain.deviceTokenKey) != nil { linkState = .linked(deviceId: id) }
     // FrameSampler invokes `send` on ITS OWN serial queue — hop to main before touching any state here.
     let s = FrameSampler { [weak self] msg in
+      // Decode the preview off-main (sampler queue), publish on main.
+      var preview: UIImage?
+      if case let .frame(_, _, b64) = msg, let d = Data(base64Encoded: b64) { preview = UIImage(data: d) }
       Task { @MainActor in
         guard let self else { return }
         self.socket?.send(msg)
-        if case .frame = msg { self.framesSent += 1 }
+        if case .frame = msg { self.framesSent += 1; if let preview { self.lastFrame = preview } }
       }
     }
     sampler = s
@@ -92,7 +99,11 @@ final class BridgeController: ObservableObject {
     dat?.onPhoto = { [weak self] data in Task { @MainActor in self?.photoArrived(data) } }
     dat?.onPhotoError = { [weak self] reason in Task { @MainActor in self?.photoFailed(reason) } }
     // SwiftUI does not observe a nested ObservableObject — forward DAT's changes so StatusView's dots move.
-    datChanges = dat?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+    // objectWillChange fires BEFORE the new value lands, hence the hop to read the settled streamState.
+    datChanges = dat?.objectWillChange.sink { [weak self] _ in
+      self?.objectWillChange.send()
+      Task { @MainActor in self?.refreshCameraReady() }
+    }
     #endif
     refreshBattery()
     batteryObserver = NotificationCenter.default.addObserver(
@@ -151,10 +162,11 @@ final class BridgeController: ObservableObject {
 
   // MARK: glasses connection (hardware session — independent of any Cortex session)
   //
-  // WHY THIS IS SEPARATE: the SDK re-joins the glasses' Wi-Fi hotspot every time a camera stream starts, and the
+  // WHY THIS IS SEPARATE: the SDK joins the glasses' Wi-Fi hotspot when the camera stream starts, and the
   // hotspot disappears the moment the DeviceSession ends. Tearing the session down per Cortex session therefore
-  // made iOS pop "Unable to join the network Meta RB Display" on every Start. So: connect ONCE (session +
-  // display + renderer), then only the camera follows Start/Stop.
+  // made iOS pop "Unable to join the network Meta RB Display" on every Start. So the CONNECTION owns the whole
+  // hardware bring-up — session, display, renderer AND the camera stream — and stays up until Disconnect.
+  // Start/Stop then only decide whether sampled frames are sent to Cortex (FrameSampler drops them otherwise).
 
   func connectGlasses() async {
     #if canImport(MWDATCore)
@@ -164,10 +176,11 @@ final class BridgeController: ObservableObject {
     defer { glassesConnecting = false }
     lastError = nil
     do {
-      // dat.connect() has no deadline of its own: if the handshake never reaches .started/.stopped it would hang
-      // arm / spike / playground forever. Race it against 30 s — every caller must end in connected or an error.
+      // Neither dat.connect() nor startCamera() has a deadline of its own (the handshake may never reach
+      // .started, the camera bounces through Meta AI): if they hang they would hang arm / spike / playground
+      // forever. Race the WHOLE bring-up against 30 s — every caller must end in connected or an error.
       let ok = try await withThrowingTaskGroup(of: Bool.self) { group in
-        group.addTask { try await dat.connect(); return true }
+        group.addTask { try await self.bringUpGlasses(dat); return true }
         group.addTask { try await Task.sleep(nanoseconds: 30_000_000_000); return false }
         let first = try await group.next()!
         group.cancelAll()
@@ -178,17 +191,35 @@ final class BridgeController: ObservableObject {
         lastError = "Glasses: connect timed out (session=\(dat.sessionState))"
         return
       }
-      guard let d = dat.display else { lastError = "Glasses: display not attached"; return }
-      // ONE renderer for the life of the connection: cards, spike and playground all draw through it.
-      if renderer == nil { renderer = HudRendererBox(display: d, minGapMs: ArmedConfig.defaults.renderMinGapMs) }
+      startWatchdog()      // watches the stream for as long as the connection lives; fresh attempt counter
     } catch {
       lastError = "Glasses: \(error.localizedDescription)"
     }
     #endif
   }
 
+  #if canImport(MWDATCore)
+  /// Session → display → renderer → camera stream. The camera is part of the connection: starting the stream is
+  /// what makes the SDK join the glasses' hotspot, and the user expects Connect to be what does that. A camera
+  /// failure is reported but leaves the connection (and the display) up.
+  private func bringUpGlasses(_ dat: DATSessionManager) async throws {
+    try await dat.connect()
+    guard let d = dat.display else { lastError = "Glasses: display not attached"; return }
+    // ONE renderer for the life of the connection: cards, spike and playground all draw through it.
+    if renderer == nil { renderer = HudRendererBox(display: d, minGapMs: ArmedConfig.defaults.renderMinGapMs) }
+    do { try await dat.startCamera() } catch { lastError = "Glasses: camera \(error.localizedDescription)" }
+    refreshCameraReady()
+  }
+
+  private func refreshCameraReady() {
+    guard let dat else { return }
+    if case .streaming = dat.streamState { cameraReady = true } else { cameraReady = false }
+  }
+  #endif
+
   func disconnectGlasses() {
     guard !armed else { lastError = "Stop the session first"; return }
+    watchdogTask?.cancel(); watchdogTask = nil
     renderer = nil
     #if canImport(MWDATDisplay)
     playgroundShown = false
@@ -222,9 +253,9 @@ final class BridgeController: ObservableObject {
     let cfg = config ?? .defaults
     NSLog("armed.config: compiled=\(ArmedConfig.defaults) received=\(String(describing: config)) → using \(cfg)")
 
-    // ANY `armed` while we are already armed is a sessionId + config update, never a restart. The camera
-    // belongs to the user's Start/Stop, not to Cortex's session id: a WS blip makes Cortex mint a NEW sessionId,
-    // and re-entering the hardware path would re-attach a camera that is already streaming.
+    // ANY `armed` while we are already armed is a sessionId + config update, never a restart: a WS blip makes
+    // Cortex mint a NEW sessionId, and re-entering the hardware path would re-attach a camera that is already
+    // streaming. (The stream belongs to the CONNECTION now — arm only re-asserts it, idempotently.)
     if armed {
       sessionId = newSessionId
       sampler.apply(cfg)
@@ -251,24 +282,23 @@ final class BridgeController: ObservableObject {
       guard !Task.isCancelled, dat.isConnected else { return }  // connectGlasses already reported the failure
       renderer?.apply(renderMinGapMs: cfg.renderMinGapMs)     // never rebuilt: the display outlives the session
       do {
-        try await dat.startCamera()
-        guard !Task.isCancelled else { dat.stopCamera(); return }   // Stop arrived while the camera was coming up
+        try await dat.startCamera()     // idempotent: a no-op unless the connection's own camera start failed
       } catch {
         guard !Task.isCancelled else { return }
         lastError = "Glasses: \(error.localizedDescription)"
         socket?.send(.status(battery: nil, note: "dat_failed: \(error.localizedDescription)"))
       }
     }
-    startWatchdog()
     startKeepAwake()
     #endif
   }
 
-  // MARK: stream watchdog + lens keepalive (both live exactly as long as an armed session)
+  // MARK: stream watchdog (lives with the connection) + lens keepalive (lives with an armed session)
 
   /// The camera stream dies quietly: the glasses' Wi-Fi hotspot drops and DAT sits in .waitingForDevice with no
   /// error. Only a stopCamera()/startCamera() cycle re-joins that hotspot, so that is what this does — after
-  /// 6 s of not-streaming, then backing off 6/12/24 s, at most 5 times per arm.
+  /// 6 s of not-streaming, then backing off 6/12/24 s, at most 5 times per connection (the counter resets when
+  /// streaming resumes, and on every explicit Connect, which starts a fresh watchdog).
   private func startWatchdog() {
     #if canImport(MWDATCore)
     guard let dat, DATSessionManager.isHardwareAvailable else { return }
@@ -279,9 +309,9 @@ final class BridgeController: ObservableObject {
       var downSince: Date?
       while !Task.isCancelled {
         try? await Task.sleep(nanoseconds: 2_000_000_000)
-        guard let self, !Task.isCancelled, self.armed else { return }
+        guard let self, !Task.isCancelled, dat.isConnected else { return }
         if case .streaming = dat.streamState { downSince = nil; attempts = 0; continue }
-        guard !self.arming else { downSince = nil; continue }      // an arm is still bringing the camera up
+        guard !self.arming, !self.glassesConnecting else { downSince = nil; continue }   // a bring-up is in flight
         let since = downSince ?? Date()
         downSince = since
         guard -since.timeIntervalSinceNow >= backoff[min(attempts, backoff.count - 1)], attempts < 5 else { continue }
@@ -312,7 +342,6 @@ final class BridgeController: ObservableObject {
     // later cannot hurt the newer session — DATSessionManager guards both connect() and startCamera() on
     // `session === s`, i.e. it only acts while the session it started on is still the live one.
     armTask?.cancel(); armTask = nil
-    watchdogTask?.cancel(); watchdogTask = nil
     awakeTimer?.invalidate(); awakeTimer = nil
     armed = false
     sessionId = nil
@@ -320,9 +349,8 @@ final class BridgeController: ObservableObject {
     sampler.stop()
     keepalive.stop()
     stopTestFrames()
-    #if canImport(MWDATCore)
-    dat?.stopCamera()       // the DeviceSession, the display and the renderer stay up — see connectGlasses()
-    #endif
+    // The camera stream is NOT stopped: it belongs to the connection (see connectGlasses), and sampler.stop()
+    // above already drops every frame before it is encoded. Stopping it here would drop the hotspot.
   }
 
   // MARK: Cortex → device (DESIGN.md §5.1 responsibility 3)
@@ -412,8 +440,7 @@ final class BridgeController: ObservableObject {
     #if canImport(MWDATCore)
     guard let dat else { spikeResult = "SPIKE N/A: \(DATSessionManager.configureError ?? "DAT not configured")"; return }
     guard DATSessionManager.isHardwareAvailable else { spikeResult = "SPIKE N/A in Simulator"; return }
-    defer { dat.stopCamera() }          // camera only: the session + display stay connected for the next Start
-    await connectGlasses()              // carries the 30 s deadline, so this can never hang the gate
+    await connectGlasses()              // brings up session + display + camera stream, all of which stay up              // carries the 30 s deadline, so this can never hang the gate
     guard dat.isConnected else {
       spikeResult = "SPIKE FAIL: \(lastError ?? "connect failed") (session=\(dat.sessionState))"
       return

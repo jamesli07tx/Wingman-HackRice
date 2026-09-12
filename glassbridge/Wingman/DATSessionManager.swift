@@ -214,7 +214,9 @@ final class DATSessionManager: ObservableObject {
 
     // Mirrors Meta's CameraAccess sample (hvc1/low/24): HEVC over Bluetooth Classic. `.raw` at .high made the SDK
     // reach for the Wi-Fi hotspot transport, which a free Personal Team cannot sign (HotspotConfiguration entitlement).
-    let config = StreamConfiguration(videoCodec: .hvc1, resolution: .low, frameRate: 24)
+    // .high (720×1280) now that the transport is the glasses' Wi-Fi hotspot (verified on hardware): gives the
+    // 768 px frames DESIGN.md wants for banner text. 15 fps keeps HEVC keyframes frequent for the decoder.
+    let config = StreamConfiguration(videoCodec: .hvc1, resolution: .high, frameRate: 15)
     guard let cam = try s.addCamera(config: config) else { throw DATError.cameraUnavailable }
     camera = cam
     let stream = cam.stream
