@@ -123,6 +123,22 @@ struct StatusView: View {
           .controlSize(.large)
           .disabled(bridge.glassesConnecting)
         }
+
+        // The hotspot join can leave iOS in a state where every Connect fails until the entry is dropped —
+        // this is the button that drops it. Automatic recovery uses the same path.
+        Button("Force reconnect") { Task { await bridge.userForceReconnect() } }
+          .buttonStyle(.bordered)
+          .frame(maxWidth: .infinity)
+          .disabled(bridge.glassesConnecting || bridge.reconnecting)
+
+        if let status = bridge.reconnectStatus {
+          Text(status)
+            .font(.footnote)
+            .foregroundStyle(.orange)          // yellow-on-white is unreadable; the tint below carries the colour
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color.yellow.opacity(0.18)))
+        }
       } else {
         // configure() failed — the app still links, streams test frames and renders nothing. Not a crash.
         pill(DATSessionManager.configureError ?? "DAT unavailable", .red)
@@ -310,10 +326,8 @@ struct StatusView: View {
   #if canImport(MWDATCore)
   private func isDisplayStarted(_ dat: DATSessionManager) -> Bool { if case .started = dat.displayState { return true }; return false }
   private func isRegistered(_ dat: DATSessionManager) -> Bool { if case .registered = dat.registration { return true }; return false }
-  /// The glasses' hotspot announces itself as "Meta RB Display …" — any other SSID means the join has not happened.
   private func onGlassesHotspot(_ dat: DATSessionManager) -> Bool {
-    guard let ssid = dat.wifiSSID else { return false }
-    return ["Meta", "Display"].contains { ssid.range(of: $0, options: .caseInsensitive) != nil }
+    dat.wifiSSID.map(DATSessionManager.isGlassesSSID) ?? false
   }
   #endif
 

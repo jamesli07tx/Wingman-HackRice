@@ -48,6 +48,9 @@ final class DATSessionManager: ObservableObject {
   /// The Wi-Fi the PHONE is on. The camera transport makes the SDK join the glasses' own hotspot
   /// ("Meta RB Display …"), so this is the one visible sign that the join actually happened.
   @Published private(set) var wifiSSID: String?
+  /// DAT dropped the session under us (glasses off, hinges closed, hotspot lost). The stale session is why every
+  /// later connect() then fails — BridgeController watches this and force-reconnects. Cleared by a good connect().
+  @Published private(set) var lostConnection = false
 
   // The three callbacks are invoked OFF the main actor, straight from the DAT listener thread, so they are
   // `@Sendable` and are snapshotted into locals at startCamera() time — the listener closures never touch `self`.
@@ -139,6 +142,39 @@ final class DATSessionManager: ObservableObject {
     }
   }
 
+  /// The glasses' hotspot announces itself as "Meta RB Display …".
+  static func isGlassesSSID(_ ssid: String) -> Bool {
+    ["Meta", "Display"].contains { ssid.range(of: $0, options: .caseInsensitive) != nil }
+  }
+
+  /// Recovery for the state where every Connect fails until the app is force-quit: tear the session down AND
+  /// make iOS forget the glasses' hotspot, so the next stream start re-joins it from scratch instead of reusing
+  /// a half-dead configuration. getConfiguredSSIDs only ever returns hotspots THIS app configured, i.e. ours.
+  func hardReset() async {
+    disconnect()
+    let configured = await withCheckedContinuation { cont in
+      NEHotspotConfigurationManager.shared.getConfiguredSSIDs { cont.resume(returning: $0) }
+    }
+    var candidates = Set(configured)
+    if let current = wifiSSID { candidates.insert(current) }
+    for ssid in candidates.sorted() where Self.isGlassesSSID(ssid) {
+      NEHotspotConfigurationManager.shared.removeConfiguration(forSSID: ssid)
+      NSLog("DATSessionManager.hardReset: removed hotspot configuration for \(ssid)")
+    }
+    wifiSSID = nil
+    // The removal is not instant inside iOS; reconnecting immediately lands back on the dead configuration.
+    try? await Task.sleep(nanoseconds: 2_000_000_000)
+  }
+
+  /// A session that stops on its own leaves `isConnected` lying — and a lying isConnected makes connect() a no-op.
+  private func sessionStateChanged(_ st: DeviceSessionState) {
+    sessionState = st
+    guard st == .stopped, isConnected else { return }
+    isConnected = false
+    lostConnection = true
+    NSLog("DATSessionManager: session stopped while connected — connection lost")
+  }
+
   // MARK: registration (Meta AI round-trip, api-notes §2)
 
   func register() async {
@@ -167,7 +203,7 @@ final class DATSessionManager: ObservableObject {
     let s = try wearables.createSession(deviceSelector: selector)
     session = s
     // Mirror session state/errors through the multicast publishers, subscribed BEFORE start() (api-notes §6 step 3).
-    s.statePublisher.listen { [weak self] st in Task { @MainActor in self?.sessionState = st } }.store(in: sessionBag)
+    s.statePublisher.listen { [weak self] st in Task { @MainActor in self?.sessionStateChanged(st) } }.store(in: sessionBag)
     s.errorPublisher.listen { [weak self] e in Task { @MainActor in self?.lastError = "Session error: \(e)" } }.store(in: sessionBag)
 
     do {
@@ -190,6 +226,7 @@ final class DATSessionManager: ObservableObject {
       d.statePublisher.listen { [weak self] st in Task { @MainActor in self?.displayState = st } }.store(in: sessionBag)
       d.start()
       isConnected = true
+      lostConnection = false
       startWiFiPolling()
       await refreshWiFi()
     } catch {
