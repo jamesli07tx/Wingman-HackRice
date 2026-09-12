@@ -44,7 +44,7 @@ export interface GatewayEvents {
 }
 
 // ---------------------------------------------------------------------------
-// SceneGate (DESIGN.md §5.3) — haiku frame gate + D13 churn rules.
+// SceneGate (DESIGN.md §5.3) — vision frame gate (opus-5 by default) + D13 churn rules.
 // Owns: stability tracker (×N), single-flight latch, cooldown map.
 // ---------------------------------------------------------------------------
 

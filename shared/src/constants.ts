@@ -16,7 +16,7 @@ export const PAGE1_MIN_SEC = 15; // summary page hold before first rotation
 export const ROTATE_SEC = 12; // page alternation interval
 
 // per-stage timeouts -> degraded card, never a hang:
-export const T_GATE_MS = 3000;
+export const T_GATE_MS = 4000; // opus-5 gate: p90 ~2.5 s from a laptop, less from us-east-1
 export const T_IDENTIFY_MS = 5000;
 export const T_SEARCH_MS = 4000;
 export const T_PITCH_MS = 10000;

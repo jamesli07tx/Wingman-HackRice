@@ -90,7 +90,7 @@ flowchart LR
 | DB + files | **Supabase** (Postgres + Storage) | One managed service for corpus, profiles, device links, resume PDF. **No vector DB** — corpus ≤ 60 companies; identification returns a *name*; lookup is exact/alias match. If it ever grows to thousands, add pgvector — `ContextProvider` doesn't change |
 | Glasses SDK | **Meta Wearables DAT v0.9.0** (Swift, SPM `facebook/meta-wearables-dat-ios`, iOS 17.2+) | Camera streaming (HEVC, background-capable since v0.5.0) + display rendering (declarative components, since v0.7.0). Requires Developer Mode in Meta AI app, tester enrollment (≤ 100 testers), Meta AI app v272+, firmware v125+ |
 | iOS distribution | Xcode free "Personal Team" sideload | Installs expire in 7 days (fine); re-sign morning of demo day |
-| LLM — frame gate | **`claude-haiku-4-5`** vision | Classifies every sampled frame (`banner\|document\|nothing`) at ~$0.002/frame ≈ $0.07/min — trivial for a demo; ~500 ms |
+| LLM — frame gate | **`claude-opus-5`** vision, `effort: "low"` (`GATE_MODEL` env overrides; `claude-haiku-4-5` is the cheap fallback) | Classifies every sampled frame (`banner\|document\|nothing`); ~2 s p50. Haiku missed small/on-screen logos in real glasses frames |
 | LLM — reasoning/vision | **`claude-opus-5`** — adaptive thinking, streaming, `output_config.effort: "low"` for identify | Banner ID, Tavily-path summaries, pitch, pamphlet extraction, resume parse — one provider |
 | Resume parsing | Claude PDF input (base64 `document` block, no beta) | No OCR library — PDF straight to opus-5, profile JSON via structured output |
 | Live search | **Tavily** | One-call answers; behind `ContextProvider` (D6) |
@@ -100,7 +100,7 @@ flowchart LR
 **Model calls — house rules (all routes):**
 - Exact IDs `claude-opus-5` / `claude-haiku-4-5` — never append date suffixes.
 - **opus-5:** adaptive thinking is the default — omit `thinking` or send `{"type":"adaptive"}`; `budget_tokens` returns a 400. `output_config.effort: "low"` for identify and the gate-adjacent fast paths, default for pitch/resume.
-- **haiku-4-5:** does **not** support adaptive thinking — **omit `thinking` entirely** (the gate needs none; `max_tokens` ~128).
+- **Gate model:** `claude-opus-5` at `effort: "low"`, `max_tokens` 512 (adaptive thinking draws from it). `GATE_MODEL=claude-haiku-4-5` restores the cheap gate — haiku does **not** support adaptive thinking, so **omit `thinking` entirely** there (`max_tokens` 128).
 - Structured outputs via `output_config.format` (the old `output_format` param is deprecated; assistant prefill no longer exists). Schemas in Appendix C, exported from `shared/schemas.ts`.
 - Enable server-side refusal fallbacks on every opus-5 call: `betas: ["server-side-fallback-2026-07-01"], fallbacks: "default"`. Check `stop_reason === "refusal"` on every response regardless.
 - Streaming for anything long (pitch, Tavily summaries, resume parse).
@@ -152,7 +152,7 @@ sequenceDiagram
 | Stage | Work | Budget |
 |---|---|---|
 | F0 | Sampled frame arrives (cadence ~1.75 s, ≤ 768 px, ≤ ~120 KB) | — |
-| F1 | `claude-haiku-4-5` gate classify (cached system prompt) | ~400–600 ms |
+| F1 | gate classify — `claude-opus-5` effort low (cached system prompt) | ~2 s (haiku ~1.3 s) |
 | F2 | Stability check: 2nd consecutive matching class | worst case +1 cadence interval |
 | F3 | Ack card rendered ("Identifying…") — only after stability, so no churn from glances | — |
 | F4 | `claude-opus-5` vision identify (effort `low`, structured output) | ~1–2 s |
@@ -316,7 +316,7 @@ Modules, each an interface + one implementation + `// INTEGRATION:` block:
 | Module | Interface | Notes |
 |---|---|---|
 | `DeviceGateway` | WS hub, auth by deviceToken | Hosts `MockDeviceAdapter`: replays a canned frame sequence from `cortex/fixtures/` (a walk-up to a printed banner, then a pamphlet close-up) — the whole pipeline is testable with zero hardware from hour 3 |
-| `SceneGate` | frame in → `{class, orgHint}` out | haiku-4-5 vision, no thinking, `max_tokens` 128, structured output, cached system prompt. Owns the stability tracker (×2), single-flight latch, and cooldown map (D13) |
+| `SceneGate` | frame in → `{class, orgHint}` out | opus-5 vision at effort low (`GATE_MODEL` overrides), structured output, cached system prompt. Owns the stability tracker (×2), single-flight latch, and cooldown map (D13) |
 | `IdentifyService` | `Identifier` | `VisionCorpusIdentifier`: opus-5, frame + corpus name/alias list **in the system prompt** (cache-stable), effort `low`, structured output → `{corpusId?, nameGuess?, confidence}`. < 0.6 → silence (log to dashboard). Override sets it directly |
 | `ContextService` | `ContextProvider` | `CorpusProvider` (Postgres lookup → **pre-generated card**, instant) → miss → `LiveSearchProvider` (Tavily + opus-5 condense to card schema, streamed, cached back into DB) |
 | `PitchService` | profile + company record → pitch page | opus-5 streaming, structured to card line limits; auto-invoked on every successful identification |
@@ -469,7 +469,7 @@ wingman/
 
 All LLM calls use `output_config.format` with these schemas (`strict` semantics: `additionalProperties: false`, all fields required unless noted). System prompts are byte-stable; images always last in the user turn; `cache_control` breakpoint after the system prompt.
 
-**C1 · Gate** (`claude-haiku-4-5`, no thinking, `max_tokens` 128). System prompt (stable): *"You classify a single first-person frame from smart glasses at a career fair. `banner` = an employer's name or logo is readable somewhere in the view — on a booth banner, sign, poster, table cloth, tote, or a screen/laptop/phone display — at typical booth distance (1–3 m); it does not need to fill the frame, only to be legible. `document` = a pamphlet/flyer/one-pager held close to the camera filling much of the frame. `nothing` = no readable employer name or logo (too small, blurred, or cut off). If banner, put the most legible organization name in orgHint."*
+**C1 · Gate** (`claude-opus-5`, `effort: "low"`, `max_tokens` 512; `GATE_MODEL=claude-haiku-4-5` → no thinking, `max_tokens` 128). System prompt (stable): *"You classify a single first-person frame from smart glasses at a career fair. `banner` = an employer's name or logo is readable somewhere in the view — on a booth banner, sign, poster, table cloth, tote, or a screen/laptop/phone display — at typical booth distance (1–3 m); it does not need to fill the frame, only to be legible. `document` = a pamphlet/flyer/one-pager held close to the camera filling much of the frame. `nothing` = no readable employer name or logo (too small, blurred, or cut off). If banner, put the most legible organization name in orgHint."*
 
 ```json
 { "type": "object", "additionalProperties": false,
@@ -535,7 +535,7 @@ export const RENDER_MIN_GAP_MS   = 500;   // GlassBridge full-screen-replace coa
 export const PAGE1_MIN_SEC       = 15;    // summary page hold before first rotation
 export const ROTATE_SEC          = 12;    // page alternation interval
 // per-stage timeouts → degraded card, never a hang:
-export const T_GATE_MS     = 3000;
+export const T_GATE_MS     = 4000;
 export const T_IDENTIFY_MS = 5000;
 export const T_SEARCH_MS   = 4000;
 export const T_PITCH_MS    = 10000;

@@ -7,7 +7,7 @@
 import { z } from "zod";
 import type { ProfileSummary, SummaryCardContent } from "./protocol.js";
 
-// C1 · Gate (claude-haiku-4-5, NO thinking param, max_tokens ~128)
+// C1 · Gate (claude-opus-5 effort low by default; GATE_MODEL=claude-haiku-4-5 for the cheap gate)
 export const GateResultSchema = z.strictObject({
   class: z.enum(["banner", "document", "nothing"]),
   orgHint: z.string().max(60).nullable(),

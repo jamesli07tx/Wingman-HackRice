@@ -20,6 +20,7 @@ import { DeviceGateway } from "./gateway/DeviceGateway.js";
 import { MockDeviceAdapter } from "./gateway/MockDeviceAdapter.js";
 import { SessionOrchestrator } from "./session/SessionOrchestrator.js";
 import { DashboardHub } from "./dashboard/DashboardHub.js";
+import { gateModel } from "./llm/anthropic.js";
 import { createClerkVerifier, restRoutes } from "./rest/routes.js";
 import { SceneGate } from "./gate/SceneGate.js";
 import { IdentifyService, type IdentifyCorpusEntry } from "./identify/IdentifyService.js";
@@ -82,6 +83,7 @@ async function wireFullStack(): Promise<void> {
     warn: (msg: string, meta?: Record<string, unknown>) => app.log.warn(meta ?? {}, msg),
   };
   const hub = new DashboardHub({ verifyToken, logger: log });
+  log.info("gate model", { model: gateModel() });
 
   // Identify corpus snapshot (boot-time; re-run `corpus ingest/enrich` + restart to refresh).
   const { data: corpusRows, error: corpusErr } = await supabase

@@ -5,10 +5,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GateResult } from "@wingman/shared";
 
-const { haikuClassify } = vi.hoisted(() => ({ haikuClassify: vi.fn() }));
+const { gateClassify } = vi.hoisted(() => ({ gateClassify: vi.fn() }));
 
 vi.mock("../../src/llm/anthropic.js", () => ({
-  haikuClassify,
+  gateClassify,
   opusParse: vi.fn(),
   opusVisionContent: vi.fn(),
   pdfContent: vi.fn(),
@@ -35,12 +35,12 @@ function harness(opts: { now?: () => number } = {}) {
 }
 
 beforeEach(() => {
-  haikuClassify.mockReset();
+  gateClassify.mockReset();
 });
 
 describe("SceneGate — C1 prompt", () => {
   it("sends the Appendix C1 system prompt verbatim and byte-stable", async () => {
-    haikuClassify.mockResolvedValue(nothing);
+    gateClassify.mockResolvedValue(nothing);
     const { gate } = harness();
     await gate.onFrame("s1", 1, FRAME);
     await gate.onFrame("s1", 2, FRAME);
@@ -49,15 +49,14 @@ describe("SceneGate — C1 prompt", () => {
       "You classify a single first-person frame from smart glasses at a career fair.",
     );
     expect(GATE_SYSTEM_PROMPT).toContain("If banner, put the most legible organization name in orgHint.");
-    const systems = haikuClassify.mock.calls.map((c) => (c[0] as { system: string }).system);
+    const systems = gateClassify.mock.calls.map((c) => (c[0] as { system: string }).system);
     expect(systems).toEqual([GATE_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT]);
-    expect((haikuClassify.mock.calls[0][0] as { maxTokens: number }).maxTokens).toBe(128);
   });
 });
 
 describe("SceneGate — stability tracker (STABILITY_N = 2)", () => {
   it("emits telemetry for every frame but no detection on a single banner", async () => {
-    haikuClassify.mockResolvedValueOnce(nothing).mockResolvedValueOnce(banner);
+    gateClassify.mockResolvedValueOnce(nothing).mockResolvedValueOnce(banner);
     const { gate, detections, telemetry } = harness();
 
     await gate.onFrame("s1", 1, FRAME);
@@ -68,7 +67,7 @@ describe("SceneGate — stability tracker (STABILITY_N = 2)", () => {
   });
 
   it("fires exactly once on the second consecutive banner", async () => {
-    haikuClassify.mockResolvedValue(banner);
+    gateClassify.mockResolvedValue(banner);
     const { gate, detections } = harness();
 
     await gate.onFrame("s1", 1, FRAME);
@@ -81,7 +80,7 @@ describe("SceneGate — stability tracker (STABILITY_N = 2)", () => {
   });
 
   it("resets the streak when the class changes (a glance never fires)", async () => {
-    haikuClassify
+    gateClassify
       .mockResolvedValueOnce(banner)
       .mockResolvedValueOnce(nothing)
       .mockResolvedValueOnce(banner)
@@ -94,7 +93,7 @@ describe("SceneGate — stability tracker (STABILITY_N = 2)", () => {
   });
 
   it("tracks stability per session", async () => {
-    haikuClassify.mockResolvedValue(banner);
+    gateClassify.mockResolvedValue(banner);
     const { gate, detections } = harness();
 
     await gate.onFrame("s1", 1, FRAME);
@@ -106,27 +105,27 @@ describe("SceneGate — stability tracker (STABILITY_N = 2)", () => {
 
 describe("SceneGate — single-flight latch", () => {
   it("drops frames (no classify, no telemetry) while a flight is open", async () => {
-    haikuClassify.mockResolvedValue(banner);
+    gateClassify.mockResolvedValue(banner);
     const { gate, detections, telemetry, notes } = harness();
 
     await gate.onFrame("s1", 1, FRAME);
     await gate.onFrame("s1", 2, FRAME); // stable -> detection, latch closes
     expect(detections).toHaveLength(1);
 
-    const classifyCallsAtLatch = haikuClassify.mock.calls.length;
+    const classifyCallsAtLatch = gateClassify.mock.calls.length;
     const telemetryAtLatch = telemetry.length;
 
     await gate.onFrame("s1", 3, FRAME);
     await gate.onFrame("s1", 4, FRAME);
 
-    expect(haikuClassify.mock.calls.length).toBe(classifyCallsAtLatch);
+    expect(gateClassify.mock.calls.length).toBe(classifyCallsAtLatch);
     expect(telemetry.length).toBe(telemetryAtLatch);
     expect(detections).toHaveLength(1);
     expect(notes.filter((n) => n.startsWith("dropped"))).toHaveLength(2);
   });
 
   it("releases on flightDone and needs a FRESH run of N to fire again", async () => {
-    haikuClassify.mockResolvedValue(banner);
+    gateClassify.mockResolvedValue(banner);
     const { gate, detections } = harness();
 
     await gate.onFrame("s1", 1, FRAME);
@@ -168,7 +167,7 @@ describe("SceneGate — cooldown map (COOLDOWN_MIN = 10)", () => {
   });
 
   it("reset() purges stability, latch and cooldowns (D14 session purge)", async () => {
-    haikuClassify.mockResolvedValue(banner);
+    gateClassify.mockResolvedValue(banner);
     const { gate, detections } = harness({ now: () => 0 });
 
     await gate.onFrame("s1", 1, FRAME);
@@ -190,11 +189,11 @@ describe("SceneGate — T_GATE_MS timeout", () => {
   it("treats a hung classify as 'nothing' and notes it", async () => {
     vi.useFakeTimers();
     try {
-      haikuClassify.mockImplementation(() => new Promise(() => {}));
+      gateClassify.mockImplementation(() => new Promise(() => {}));
       const { gate, telemetry, detections, notes } = harness();
 
       const pending = gate.onFrame("s1", 1, FRAME);
-      await vi.advanceTimersByTimeAsync(3001);
+      await vi.advanceTimersByTimeAsync(4001);
       await pending;
 
       expect(telemetry).toEqual([{ sessionId: "s1", seq: 1, result: { class: "nothing", orgHint: null } }]);
@@ -206,7 +205,7 @@ describe("SceneGate — T_GATE_MS timeout", () => {
   });
 
   it("treats a classify error as 'nothing' rather than throwing", async () => {
-    haikuClassify.mockRejectedValue(new Error("rate_limited"));
+    gateClassify.mockRejectedValue(new Error("rate_limited"));
     const { gate, telemetry, notes } = harness();
 
     await expect(gate.onFrame("s1", 1, FRAME)).resolves.toBeUndefined();

@@ -24,7 +24,7 @@
 import { GateResultSchema, COOLDOWN_MIN, STABILITY_N, T_GATE_MS } from "@wingman/shared";
 import type { GateResult } from "@wingman/shared";
 import type { DetectionHandler, GateTelemetryHandler, SceneGateApi } from "../interfaces.js";
-import { haikuClassify } from "../llm/anthropic.js";
+import { gateClassify } from "../llm/anthropic.js";
 
 /**
  * C1 system prompt — VERBATIM from DESIGN.md Appendix C.
@@ -175,12 +175,11 @@ export class SceneGate implements SceneGateApi {
     });
     try {
       const raw = await Promise.race([
-        haikuClassify({
+        gateClassify({
           system: GATE_SYSTEM_PROMPT,
           jpegBase64: jpeg.toString("base64"),
           userText: GATE_USER_TEXT,
           schema: GateResultSchema,
-          maxTokens: 128,
         }),
         timeout,
       ]);

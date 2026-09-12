@@ -4,7 +4,7 @@
 //
 // House rules encoded here:
 // - exact model IDs, no date suffixes
-// - haiku-4-5: NO thinking param; opus-5: adaptive thinking is the default (omit param)
+// - gate: opus-5 at effort "low" by default (GATE_MODEL overrides); haiku-4-5 takes NO thinking param
 // - structured outputs via output_config.format (zodOutputFormat)
 // - refusal fallbacks on every opus-5 call: betas server-side-fallback-2026-07-01 + fallbacks "default"
 // - stop_reason === "refusal" checked on every response
@@ -61,35 +61,52 @@ function extractText(content: { type: string; text?: string }[]): string {
 }
 
 /**
- * C1 gate call — haiku vision classify. Runs ~34×/min, so the byte-stable
- * system prompt is cache_control'd and the frame image comes last.
- * NO thinking param (haiku does not take adaptive).
+ * C1 gate model. Opus 5 by default — the gate has to read small, angled or
+ * on-screen logos in 768 px glasses frames, where haiku missed. Set
+ * GATE_MODEL=claude-haiku-4-5 (or claude-sonnet-5) to trade accuracy for
+ * latency/cost. Resolved per call so index.ts's .env load order is irrelevant.
+ * Measured on the fixture frames from a laptop: haiku p50 1.3 s, sonnet-5 1.7 s,
+ * opus-5 (effort low) 2.1 s / p90 2.5 s — all inside T_GATE_MS.
  */
-export async function haikuClassify<S extends z.ZodType>(opts: {
+export function gateModel(): string {
+  return process.env.GATE_MODEL || OPUS;
+}
+
+/**
+ * C1 gate call — vision classify. Runs ~34×/min, so the byte-stable system
+ * prompt is cache_control'd and the frame image comes last.
+ * haiku: NO thinking param. opus/sonnet: adaptive thinking at effort "low"
+ * (thinking draws from max_tokens, hence the larger cap); refusal fallbacks on opus.
+ */
+export async function gateClassify<S extends z.ZodType>(opts: {
   system: string;
   jpegBase64: string;
   userText: string;
   schema: S;
-  maxTokens?: number;
+  model?: string;
 }): Promise<z.infer<S>> {
+  const model = opts.model ?? gateModel();
+  const isHaiku = model.includes("haiku");
   const response = await withRetry(() =>
-    client.messages.parse({
-      model: HAIKU,
-      max_tokens: opts.maxTokens ?? 128,
+    client.beta.messages.create({
+      model,
+      max_tokens: isHaiku ? 128 : 512,
+      ...(model === OPUS ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" } : {}),
       system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
       messages: [
         { role: "user", content: [imageBlock(opts.jpegBase64), { type: "text", text: opts.userText }] },
       ],
-      output_config: { format: zodOutputFormat(opts.schema) },
-    }),
+      output_config: { format: zodOutputFormat(opts.schema), ...(isHaiku ? {} : { effort: "low" }) },
+    } as never),
   );
   if (response.stop_reason === "refusal") {
-    throw new RefusalError(response.stop_details?.category ?? null);
+    throw new RefusalError(
+      (response as { stop_details?: { category: string | null } }).stop_details?.category ?? null,
+    );
   }
-  if (response.parsed_output == null) {
-    throw new Error("gate: structured output failed to parse");
-  }
-  return response.parsed_output as z.infer<S>;
+  const text = extractText(response.content as { type: string; text?: string }[]);
+  if (!text) throw new Error("gate: structured output missing");
+  return opts.schema.parse(JSON.parse(text)) as z.infer<S>;
 }
 
 /**
