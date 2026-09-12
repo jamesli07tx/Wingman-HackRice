@@ -7,13 +7,16 @@ import MWDATCore
 
 @main
 struct WingmanApp: App {
-  @StateObject private var bridge = BridgeController()
+  // NOT a default value: a stored property's initializer runs BEFORE this init's body, and BridgeController
+  // must not be built until configure() has run and battery monitoring is on.
+  @StateObject private var bridge: BridgeController
 
   init() {
     #if canImport(MWDATCore)
-    do { try Wearables.configure() } catch { NSLog("Wearables.configure failed: \(error)") }
+    DATSessionManager.configure()   // never traps; on failure BridgeController runs with dat == nil
     #endif
     UIDevice.current.isBatteryMonitoringEnabled = true
+    _bridge = StateObject(wrappedValue: BridgeController())
   }
 
   var body: some Scene {

@@ -65,7 +65,9 @@ enum FrameEncoder {
   }
 }
 
-final class FrameSampler {
+/// `@unchecked Sendable`: every mutable field is touched only inside `queue`, so the DAT listener thread can
+/// hold a reference and call `offer` directly (its callbacks are `@Sendable`).
+final class FrameSampler: @unchecked Sendable {
   // All mutable state is owned by `queue`; the underscored vars are only ever touched inside it.
   private var _config: ArmedConfig
   private var _seq = 0

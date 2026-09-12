@@ -9,11 +9,10 @@
 // INTEGRATION: BridgeController
 // IN:  StatusView actions (link/unlink/start/stop/spike/toggles); CortexSocket.onMessage; DATSessionManager.onFrame/onPhoto
 // OUT: FrameSampler.offer/handlePhoto, HudRenderer.render, AudioKeepalive.start/stop, published state for StatusView
-// WIRE: one instance created by App.swift as a @StateObject
+// WIRE: one instance created by App.swift as a @StateObject, AFTER DATSessionManager.configure()
 
 import Foundation
 import Combine
-import SwiftUI
 import UIKit
 #if canImport(MWDATDisplay)
 import MWDATDisplay   // for `Display` in HudRendererBox; no DAT Text/Image is used in this file, so no SwiftUI clash
@@ -31,20 +30,32 @@ final class BridgeController: ObservableObject {
   @Published private(set) var lastCard: HudCard?
   @Published private(set) var framesSent = 0
   @Published private(set) var spikeResult: String?
+  @Published private(set) var testFramesRunning = false
   @Published var useDevHarness: Bool {
-    didSet { UserDefaults.standard.set(useDevHarness, forKey: "useDevHarness"); reconnectIfLinked() }
+    didSet {
+      UserDefaults.standard.set(useDevHarness, forKey: "useDevHarness")
+      if armed { stop() }        // the other endpoint knows nothing about the session we were running
+      reconnectIfLinked()
+    }
   }
 
   #if canImport(MWDATCore)
-  let dat = DATSessionManager()
+  /// nil when DATSessionManager.configure() failed — its init touches `Wearables.shared`, which TRAPS when
+  /// configuration failed, so on the Simulator (or a phone without the Meta AI app) there is simply no manager.
+  let dat: DATSessionManager? = DATSessionManager.isConfigured ? DATSessionManager() : nil
   #endif
   private var socket: CortexSocket?
   private var sampler: FrameSampler!
   private var renderer: HudRendererBox?
   private let keepalive = AudioKeepalive()
-  private var pendingPhotoReqId: String?
+  private let battery = BatteryMonitor()
+  /// FIFO: Cortex may have more than one capture_photo outstanding, and DAT's photo callback carries no reqId.
+  private var pendingPhotoReqIds: [String] = []
+  /// The in-flight `dat.start()`; cancelled and awaited so two arms can never race inside DAT.
+  private var armTask: Task<Void, Never>?
   private var simulatorFrameTimer: Timer?
   private var datChanges: AnyCancellable?
+  private var batteryObserver: NSObjectProtocol?
 
   init() {
     useDevHarness = UserDefaults.standard.object(forKey: "useDevHarness") as? Bool ?? !Config.isCortexConfigured
@@ -59,19 +70,34 @@ final class BridgeController: ObservableObject {
     }
     sampler = s
     #if canImport(MWDATCore)
-    // Capture the sampler itself: onFrame fires off-main on the DAT thread and FrameSampler is thread-safe,
-    // so there is no reason to bounce the hot frame path through main-isolated state.
-    dat.onFrame = { [s] img in s.offer(img) }
-    dat.onPhoto = { [weak self] data in Task { @MainActor in self?.photoArrived(data) } }
-    dat.onPhotoError = { [weak self] reason in Task { @MainActor in self?.photoFailed(reason) } }
+    // Assigned before any start(), as DATSessionManager requires. The frame path stays off-main: FrameSampler
+    // is queue-confined and Sendable, so the DAT listener thread hands frames to it without a main-actor hop.
+    dat?.onFrame = { [s] img in s.offer(img) }
+    dat?.onPhoto = { [weak self] data in Task { @MainActor in self?.photoArrived(data) } }
+    dat?.onPhotoError = { [weak self] reason in Task { @MainActor in self?.photoFailed(reason) } }
     // SwiftUI does not observe a nested ObservableObject — forward DAT's changes so StatusView's dots move.
-    datChanges = dat.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+    datChanges = dat?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     #endif
+    refreshBattery()
+    batteryObserver = NotificationCenter.default.addObserver(
+      forName: UIDevice.batteryLevelDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+        Task { @MainActor in self?.refreshBattery() }
+      }
     reconnectIfLinked()
+  }
+
+  deinit {
+    socket?.disconnect()
+    if let o = batteryObserver { NotificationCenter.default.removeObserver(o) }
   }
 
   var restBaseURL: URL { useDevHarness ? Config.devHarnessHTTPURL : Config.cortexURL }
   var wsURL: URL { useDevHarness ? Config.devHarnessWSURL : Config.cortexWSURL }
+
+  private func refreshBattery() {
+    let b = UIDevice.current.batteryLevel
+    battery.update(b < 0 ? nil : Double(b))
+  }
 
   // MARK: link (DESIGN.md §5.1 responsibility 1)
 
@@ -102,7 +128,7 @@ final class BridgeController: ObservableObject {
     let s = CortexSocket(url: wsURL, token: token)
     s.onState = { [weak self] st in self?.socketState = st }
     s.onMessage = { [weak self] m in self?.handle(m) }
-    s.batteryProvider = { let b = UIDevice.current.batteryLevel; return b < 0 ? nil : Double(b) }
+    s.batteryProvider = { [battery] in battery.read() }   // heartbeat runs on the socket's queue, never on main
     s.connect()
     socket = s
   }
@@ -120,38 +146,55 @@ final class BridgeController: ObservableObject {
     disarm()
   }
 
-  private func arm(sessionId: String, config: ArmedConfig?) {
+  private func arm(sessionId newSessionId: String, config: ArmedConfig?) {
     let cfg = config ?? .defaults
     NSLog("armed.config: compiled=\(ArmedConfig.defaults) received=\(String(describing: config)) → using \(cfg)")
-    self.sessionId = sessionId
+
+    // A repeated `armed` for the session we are already running is a config update, not a restart:
+    // re-entering the hardware path would tear down a working DAT session (start() begins with stop()).
+    if armed, sessionId == newSessionId {
+      sampler.apply(cfg)
+      renderer?.apply(renderMinGapMs: cfg.renderMinGapMs)
+      return
+    }
+
+    sessionId = newSessionId
     armed = true
+    renderer = nil                  // any previous Display belongs to a session dat.start() is about to replace
     sampler.apply(cfg)
     sampler.start()
     keepalive.start()
+
     #if canImport(MWDATCore)
-    if DATSessionManager.isHardwareAvailable {
-      Task {
-        do {
-          try await dat.start()
-          if let d = dat.display { renderer = HudRendererBox(display: d, minGapMs: cfg.renderMinGapMs) }
-        } catch {
-          lastError = "Glasses: \(error.localizedDescription)"
-          socket?.send(.status(battery: nil, note: "dat_failed: \(error.localizedDescription)"))
-        }
+    guard let dat, DATSessionManager.isHardwareAvailable else { return }
+    let previous = armTask
+    previous?.cancel()
+    armTask = Task {
+      _ = await previous?.value     // serialize: never two overlapping dat.start() calls
+      guard !Task.isCancelled else { return }
+      do {
+        try await dat.start()
+        guard !Task.isCancelled else { dat.stop(); return }   // Stop arrived while DAT was still coming up
+        if let d = dat.display { renderer = HudRendererBox(display: d, minGapMs: cfg.renderMinGapMs) }
+      } catch {
+        guard !Task.isCancelled else { return }
+        lastError = "Glasses: \(error.localizedDescription)"
+        socket?.send(.status(battery: nil, note: "dat_failed: \(error.localizedDescription)"))
       }
     }
     #endif
-    renderer?.apply(renderMinGapMs: cfg.renderMinGapMs)
   }
 
   private func disarm() {
+    armTask?.cancel(); armTask = nil
     armed = false
     sessionId = nil
+    pendingPhotoReqIds.removeAll()
     sampler.stop()
     keepalive.stop()
-    simulatorFrameTimer?.invalidate(); simulatorFrameTimer = nil
+    stopTestFrames()
     #if canImport(MWDATCore)
-    dat.stop()
+    dat?.stop()
     #endif
     renderer = nil
   }
@@ -163,17 +206,20 @@ final class BridgeController: ObservableObject {
     case let .armed(sessionId, config):
       arm(sessionId: sessionId, config: config)
     case let .capturePhoto(reqId, _):
-      pendingPhotoReqId = reqId
       #if canImport(MWDATCore)
-      if !dat.capturePhoto() { photoFailed("capture_failed") }
+      if dat?.capturePhoto() == true { pendingPhotoReqIds.append(reqId) }
+      else { sampler.photoFailed(reqId: reqId, reason: "capture_failed") }
       #else
-      photoFailed("capture_failed")
+      sampler.photoFailed(reqId: reqId, reason: "capture_failed")
       #endif
     case let .render(card):
       lastCard = card
       renderer?.render(card)
     case let .sessionEnd(reason):
       NSLog("session_end: \(reason)")
+      // Clears CortexSocket.wantsSession too, so a later reconnect does not resurrect the ended session by
+      // re-sending session_start. A redundant session_stop to an already-ended session is contract-legal.
+      socket?.stopSession()
       disarm()
     case let .error(code, message, recoverable):
       lastError = "\(code.rawValue): \(message)\(recoverable ? "" : " (fatal)")"
@@ -183,28 +229,29 @@ final class BridgeController: ObservableObject {
   }
 
   private func photoArrived(_ data: Data) {
-    guard let reqId = pendingPhotoReqId else { return }
-    pendingPhotoReqId = nil
-    sampler.handlePhoto(reqId: reqId, data: data)
+    guard !pendingPhotoReqIds.isEmpty else { return }
+    sampler.handlePhoto(reqId: pendingPhotoReqIds.removeFirst(), data: data)
   }
 
   private func photoFailed(_ reason: String) {
-    guard let reqId = pendingPhotoReqId else { return }
-    pendingPhotoReqId = nil
-    sampler.photoFailed(reqId: reqId, reason: reason)
+    guard !pendingPhotoReqIds.isEmpty else { return }
+    sampler.photoFailed(reqId: pendingPhotoReqIds.removeFirst(), reason: reason)
   }
 
   func handleOpenURL(_ url: URL) async {
     #if canImport(MWDATCore)
-    await dat.handleUrl(url)
+    await dat?.handleUrl(url)
     #endif
   }
 
   // MARK: debug helpers (Simulator-degraded path + hour-zero spike)
 
-  /// Simulator: feed a synthetic frame once per second so FrameSampler/CortexSocket can be exercised without glasses.
+  /// Simulator: feed a synthetic frame once per second so FrameSampler/CortexSocket can be exercised without
+  /// glasses. Only meaningful while armed (the sampler drops everything otherwise); pressing again stops it.
   func startTestFrames() {
-    simulatorFrameTimer?.invalidate()
+    if testFramesRunning { stopTestFrames(); return }
+    guard armed else { lastError = "Start the session first"; return }
+    testFramesRunning = true
     // Timer's block is @Sendable, so it captures nothing but `self` (a @MainActor class, hence Sendable)
     // and does all its work back on the main actor.
     simulatorFrameTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -220,12 +267,21 @@ final class BridgeController: ObservableObject {
     }
   }
 
+  private func stopTestFrames() {
+    simulatorFrameTimer?.invalidate(); simulatorFrameTimer = nil
+    testFramesRunning = false
+  }
+
   /// DESIGN.md §5.1 / DESIGN_MAC.md §2.1 hour-zero hardware spike: camera stream + display on ONE DeviceSession —
-  /// wait for a real frame, then render a hello-world card. Independent of Cortex.
+  /// wait for a real frame, then render a hello-world card. Independent of Cortex, and it owns the DAT session
+  /// for its duration, so it refuses to run while a real session is armed.
   func runSpike() async {
+    guard !armed else { spikeResult = "Stop the session first"; return }
     spikeResult = "SPIKE running…"
     #if canImport(MWDATCore)
+    guard let dat else { spikeResult = "SPIKE N/A: \(DATSessionManager.configureError ?? "DAT not configured")"; return }
     guard DATSessionManager.isHardwareAvailable else { spikeResult = "SPIKE N/A in Simulator"; return }
+    defer { dat.stop() }
     do {
       try await dat.start()
       let start = Date()
@@ -257,4 +313,14 @@ final class HudRendererBox {
   func render(_ card: HudCard) {}
   func apply(renderMinGapMs: Int) {}
   #endif
+}
+
+/// CortexSocket's heartbeat asks for the battery from its own queue, so the value lives behind a lock rather
+/// than on the main actor. BridgeController refreshes it on main from UIDevice's notification.
+final class BatteryMonitor: @unchecked Sendable {
+  private let lock = NSLock()
+  private var level: Double?
+
+  func read() -> Double? { lock.lock(); defer { lock.unlock() }; return level }
+  func update(_ value: Double?) { lock.lock(); level = value; lock.unlock() }
 }

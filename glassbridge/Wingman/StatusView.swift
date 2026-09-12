@@ -41,12 +41,18 @@ struct StatusView: View {
               state: bridge.socketState == .connected ? .green : bridge.socketState == .connecting ? .yellow : .red,
               text: "\(bridge.socketState)" + (bridge.useDevHarness ? " (DevHarness)" : ""))
           #if canImport(MWDATCore)
-          dot("Glasses", state: sessionColor,
-              text: "\(bridge.dat.registration) · \(bridge.dat.deviceName ?? "no device") · session \(bridge.dat.sessionState)")
-          dot("Stream", state: isStreaming ? .green : .gray, text: "\(bridge.dat.streamState)")
-          dot("Display", state: isDisplayStarted ? .green : .gray, text: "\(bridge.dat.displayState)")
-          if !isRegistered {
-            Button("Register with Meta AI") { Task { await bridge.dat.register() } }
+          if let dat = bridge.dat {
+            dot("Glasses", state: sessionColor(dat),
+                text: "\(dat.registration) · \(dat.deviceName ?? "no device") · session \(dat.sessionState)")
+            dot("Stream", state: isStreaming(dat) ? .green : .gray, text: "\(dat.streamState)")
+            dot("Display", state: isDisplayStarted(dat) ? .green : .gray, text: "\(dat.displayState)")
+            if !isRegistered(dat) {
+              Button("Register with Meta AI") { Task { await dat.register() } }
+            }
+          } else {
+            // configure() failed — the app still links, streams test frames and renders nothing. Not a crash.
+            dot("Glasses", state: .red,
+                text: "DAT unavailable: \(DATSessionManager.configureError ?? "not configured")")
           }
           #endif
         }
@@ -73,9 +79,9 @@ struct StatusView: View {
         Section("Debug") {
           Toggle("Use DevHarness", isOn: $bridge.useDevHarness)
           LabeledContent("WS", value: bridge.wsURL.absoluteString).font(.footnote)
-          Button("Run hour-zero spike (camera + display)") { Task { await bridge.runSpike() } }
+          Button("Run hour-zero spike (camera + display)") { Task { await bridge.runSpike() } }.disabled(bridge.armed)
           if let r = bridge.spikeResult { Text(r).font(.footnote) }
-          Button("Send test frames (Simulator)") { bridge.startTestFrames() }
+          Button(bridge.testFramesRunning ? "Stop test frames" : "Send test frames (Simulator)") { bridge.startTestFrames() }
         }
         #endif
       }
@@ -86,14 +92,14 @@ struct StatusView: View {
   // `if case` rather than `==`: only DeviceSessionState is documented Equatable (docs/dat-0.9.0-api-notes.md §3),
   // and pattern matching works whatever the DAT enums' payloads turn out to be.
   #if canImport(MWDATCore)
-  private var sessionColor: Color {
-    if case .started = bridge.dat.sessionState { return .green }
-    if case .starting = bridge.dat.sessionState { return .yellow }
+  private func sessionColor(_ dat: DATSessionManager) -> Color {
+    if case .started = dat.sessionState { return .green }
+    if case .starting = dat.sessionState { return .yellow }
     return .gray
   }
-  private var isStreaming: Bool { if case .streaming = bridge.dat.streamState { return true }; return false }
-  private var isDisplayStarted: Bool { if case .started = bridge.dat.displayState { return true }; return false }
-  private var isRegistered: Bool { if case .registered = bridge.dat.registration { return true }; return false }
+  private func isStreaming(_ dat: DATSessionManager) -> Bool { if case .streaming = dat.streamState { return true }; return false }
+  private func isDisplayStarted(_ dat: DATSessionManager) -> Bool { if case .started = dat.displayState { return true }; return false }
+  private func isRegistered(_ dat: DATSessionManager) -> Bool { if case .registered = dat.registration { return true }; return false }
   #endif
 
   private var batteryText: String {

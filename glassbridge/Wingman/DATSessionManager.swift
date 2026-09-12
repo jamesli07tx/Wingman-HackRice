@@ -7,7 +7,8 @@
 // IN:  start()/stop()/capturePhoto() from BridgeController; the Meta AI registration callback URL from App.onOpenURL
 // OUT: onFrame(CGImage) off-main for every frame (FrameSampler.offer), onPhoto(Data) (FrameSampler.handlePhoto),
 //      onPhotoError, `display` for HudRenderer, @Published states for StatusView
-// WIRE: BridgeController owns one instance; App.swift calls Wearables.configure() before it is created.
+// WIRE: BridgeController owns one OPTIONAL instance (nil unless DATSessionManager.configure() succeeded);
+//       App.swift calls DATSessionManager.configure() before BridgeController is created.
 
 #if canImport(MWDATCore)
 import Foundation
@@ -58,6 +59,37 @@ final class DATSessionManager: ObservableObject {
     #else
     return true
     #endif
+  }
+
+  // MARK: configure gate (api-notes §2)
+  //
+  // `Wearables.shared` TRAPS ("Call configure() before attempting to access Wearables!") when configure()
+  // failed, and this class touches it in init — so nobody may construct a DATSessionManager until configure()
+  // has succeeded. On the Simulator (and on any phone without the Meta AI app) it throws .internalError, which
+  // is a normal degraded state, not a crash: BridgeController simply runs with `dat == nil`.
+
+  static private(set) var isConfigured = false
+  static private(set) var configureError: String?
+
+  /// Idempotent; App.swift calls this once, before BridgeController is created.
+  static func configure() {
+    guard !isConfigured else { return }
+    do {
+      try Wearables.configure()
+      isConfigured = true
+      configureError = nil
+    } catch {
+      switch error {
+      case .alreadyConfigured:
+        isConfigured = true                  // a second call in the same process is a success, not a failure
+        configureError = nil
+      case .internalError:
+        configureError = "DAT internal error — Meta AI app missing, or running in the Simulator"
+      case .configurationError:
+        configureError = "DAT configuration invalid — check the MWDAT keys in Info.plist"
+      }
+      if !isConfigured { NSLog("DATSessionManager.configure failed: \(error)") }
+    }
   }
 
   init() {
