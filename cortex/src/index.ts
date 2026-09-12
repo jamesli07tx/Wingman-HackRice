@@ -27,8 +27,11 @@ import { PitchService } from "./pitch/PitchService.js";
 import { ScanService } from "./scan/ScanService.js";
 import { ProfileService } from "./profile/ProfileService.js";
 
-// Load root .env when present (deploys); fall back to the local key drop
-// env.template (gitignored — was exposed once, keys being rotated).
+// Load the ROOT .env first (pnpm scripts run with cwd = cortex/, so a bare
+// dotenv.config() would miss it), then cwd .env, then the local key-drop
+// fallback env.template (gitignored). dotenv never overrides already-set vars,
+// so this order = priority order.
+dotenv.config({ path: fileURLToPath(new URL("../../.env", import.meta.url)) });
 dotenv.config();
 dotenv.config({ path: fileURLToPath(new URL("../../env.template", import.meta.url)) });
 
@@ -40,7 +43,9 @@ app.get("/healthz", async () => ({
   version: "0.1.0",
 }));
 
-const REQUIRED = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "CLERK_SECRET_KEY"] as const;
+// Clerk is deliberately NOT in the boot gate: the mock/device pipeline runs
+// without it; only REST + dashboard auth need it (they hard-reject when absent).
+const REQUIRED = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 const missing = REQUIRED.filter((k) => !process.env[k]);
 
 async function wireFullStack(): Promise<void> {
@@ -48,7 +53,17 @@ async function wireFullStack(): Promise<void> {
     process.env.SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
-  const verifyToken = createClerkVerifier(process.env.CLERK_SECRET_KEY!);
+  const clerkKey = process.env.CLERK_SECRET_KEY;
+  if (!clerkKey) {
+    app.log.warn(
+      "CLERK_SECRET_KEY missing — REST and dashboard auth REJECT everything until it lands (device pipeline unaffected)",
+    );
+  }
+  const verifyToken = clerkKey
+    ? createClerkVerifier(clerkKey)
+    : ((async () => {
+        throw new Error("auth unavailable: CLERK_SECRET_KEY not set");
+      }) as unknown as ReturnType<typeof createClerkVerifier>);
   const hub = new DashboardHub({ verifyToken, logger: app.log });
 
   // Identify corpus snapshot (boot-time; re-run `corpus ingest/enrich` + restart to refresh).
