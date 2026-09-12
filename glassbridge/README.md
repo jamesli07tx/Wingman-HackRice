@@ -233,6 +233,19 @@ The app is self-contained now: everything below happens on the phone, in order, 
    armed this session". The `/feed` page on the console is now the operator's copy of this screen, not
    the wearer's only one.
 
+   On top of the verdicts sits the gate model itself. Cortex publishes a `gate_debug` event per judged
+   frame (`model`, `systemPrompt`, `userText`, `rawResponse`, `stopReason`, `inputTokens`/`outputTokens`,
+   `latencyMs`, `error`, and the parsed `result`), and the app keeps the last one per frame seq. The
+   collapsible **Gate model** panel shows the model name, the mean latency over the last 20 calls, the
+   empty/error counts, and — behind *System prompt* — the full prompt text and user text exactly as the
+   DEPLOYED Cortex sent them, selectable so you can paste them somewhere. Each gate row grows a detail
+   line (`claude-opus-5 · 2.3 s · 918→22 tok · end_turn`) and expands on tap to the frame it judged, the
+   model's raw response text, stop reason, tokens, latency and any error. A red note means the call
+   produced no verdict: `gate timeout after 4000ms`, or **`no JSON returned (stop: max_tokens)`** — the
+   model hit its output cap before writing any text, which with opus-5 means it spent the whole budget
+   thinking. That is a Cortex-side fix (disable thinking for the gate, or raise `max_tokens`), not a
+   prompt or a camera problem, and this screen is how you tell those apart.
+
 The top bar carries the signed-in email, the link pill and **Sign out** (which also unlinks the device
 — the token belongs to the account that minted it).
 

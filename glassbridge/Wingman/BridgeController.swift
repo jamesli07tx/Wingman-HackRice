@@ -49,6 +49,9 @@ final class BridgeController: ObservableObject {
   /// This session's tally: what went up, and what Cortex said about it.
   @Published private(set) var gateStats = GateStats()
   @Published private(set) var lastGate: (gateClass: GateClass?, orgHint: String?, at: Date)?
+  /// What the DEPLOYED Cortex is prompting the gate with — last `gate_debug` wins, so the Feed's panel
+  /// always shows the live prompt rather than whatever this build remembers about it.
+  @Published private(set) var gateConfig: (model: String, systemPrompt: String, userText: String)?
   @Published private(set) var dashboardState: DashboardSocket.State = .disconnected
   @Published private(set) var spikeResult: String?
   @Published private(set) var spikeRunning = false
@@ -93,6 +96,8 @@ final class BridgeController: ObservableObject {
   /// The last 60 frames we sent, by seq, so a gate event can show the frame it judged and its latency.
   private var sentFrames: [Int: (image: UIImage, at: Date)] = [:]
   private var sentOrder: [Int] = []
+  /// The latest gate call per frame seq, capped at 200 (seq only ever grows, so the smallest key is oldest).
+  private var gateDebugs: [Int: GateDebug] = [:]
   /// When this armed session's first frame went up — the "no gate results" diagnostic dates from it.
   private var firstFrameAt: Date?
   private var sampler: FrameSampler!
@@ -373,10 +378,28 @@ final class BridgeController: ObservableObject {
     while sentOrder.count > 60 { sentFrames.removeValue(forKey: sentOrder.removeFirst()) }
   }
 
+  /// One Feed row per judged frame: `gate` and `gate_debug` arrive in either order, and the second one
+  /// must land on the row the first one made instead of pushing a twin.
+  private func gateRow(_ frameSeq: Int, _ apply: (inout FeedItem) -> Void) {
+    if let i = feed.firstIndex(where: { $0.kind == .gate && $0.frameSeq == frameSeq }) { return apply(&feed[i]) }
+    let sent = sentFrames[frameSeq]
+    var item = FeedItem(kind: .gate, frameSeq: frameSeq, thumbnail: sent?.image, title: "gate",
+                        detail: sent.map { String(format: "%.1f s", -$0.at.timeIntervalSinceNow) }, tint: .muted)
+    apply(&item)
+    push(item)
+  }
+
+  /// Mean gate latency over the last 20 calls — the panel's one number for "is the gate keeping up?".
+  var gateLatencyAvgMs: Int? {
+    let recent = gateDebugs.keys.sorted().suffix(20).compactMap { gateDebugs[$0]?.latencyMs }
+    return recent.isEmpty ? nil : recent.reduce(0, +) / recent.count
+  }
+
   func clearFeed() {
     feed.removeAll()
     gateStats = GateStats()
     lastGate = nil
+    gateDebugs.removeAll()
   }
 
   /// Frames are going up and nothing is coming back — the one diagnosis the Feed exists to make.
@@ -421,11 +444,24 @@ final class BridgeController: ObservableObject {
       case .nothing, nil: gateStats.nothing += 1
       }
       lastGate = (gateClass, orgHint, Date())
-      let sent = sentFrames[frameSeq]
-      push(FeedItem(kind: .gate, frameSeq: frameSeq, thumbnail: sent?.image,
-                    title: [gateClass?.rawValue ?? "unknown", orgHint].compactMap { $0 }.joined(separator: " · "),
-                    detail: sent.map { String(format: "%.1f s", -$0.at.timeIntervalSinceNow) },
-                    tint: FeedTint(gateClass)))
+      gateRow(frameSeq) {
+        $0.title = [gateClass?.rawValue ?? "unknown", orgHint].compactMap { $0 }.joined(separator: " · ")
+        $0.tint = FeedTint(gateClass)
+      }
+    case let .gateDebug(debug):
+      gateDebugs[debug.frameSeq] = debug
+      if gateDebugs.count > 200, let oldest = gateDebugs.keys.min() { gateDebugs.removeValue(forKey: oldest) }
+      gateConfig = (debug.model, debug.systemPrompt, debug.userText)
+      if debug.rawResponse == nil { gateStats.empty += 1 }
+      if debug.error != nil { gateStats.errors += 1 }
+      gateRow(debug.frameSeq) { row in
+        row.gateDebug = debug
+        // A verdict only ever reaches us once, so this either fills a row `gate` has not reached yet or repeats it.
+        if let gateClass = debug.result?.gateClass {
+          row.title = [gateClass.rawValue, debug.result?.orgHint].compactMap { $0 }.joined(separator: " · ")
+          row.tint = FeedTint(gateClass)
+        }
+      }
     case let .silencedIdentify(_, nameGuess, confidence):
       push(FeedItem(kind: .identify,
                     title: "Guess: \(nameGuess ?? "unknown") · \(percent(confidence)) · silenced (< \(percent(DashboardEvent.confThreshold)))",
@@ -943,6 +979,8 @@ struct FeedItem: Identifiable {
   var title: String
   var detail: String?
   var tint: FeedTint
+  /// Gate rows only: the prompt/response behind the verdict, once `gate_debug` arrives. Drives the expansion.
+  var gateDebug: GateDebug?
 }
 
 /// Row accent, resolved to a Theme colour by FeedView (this file knows nothing about SwiftUI).
@@ -964,6 +1002,9 @@ struct GateStats: Equatable {
   var banner = 0
   var document = 0
   var nothing = 0
+  /// gate_debug with no rawResponse — the model burned its budget and said nothing.
+  var empty = 0
+  var errors = 0
 }
 
 /// Thin wrapper so BridgeController compiles when MWDATDisplay is absent (the iOS target always links it, but keep the seam explicit).

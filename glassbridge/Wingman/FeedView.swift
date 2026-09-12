@@ -3,7 +3,7 @@
 // the answer to "is recognition actually working, or am I filming a wall?"
 //
 // INTEGRATION: FeedView
-// IN:  bridge.feed / gateStats / lastGate / dashboardState / gateSilent / armed / framesSent
+// IN:  bridge.feed / gateStats / lastGate / gateConfig / gateLatencyAvgMs / dashboardState / gateSilent / armed / framesSent
 // OUT: bridge.clearFeed()
 // WIRE: RootView tab 4
 
@@ -13,12 +13,72 @@ import UIKit
 @MainActor
 struct FeedView: View {
   @EnvironmentObject private var bridge: BridgeController
+  @State private var gatePanelOpen = false
+  @State private var promptOpen = false
+  /// Gate rows the wearer has tapped open. FeedItem ids, so a row keeps its state as the feed grows.
+  @State private var expanded: Set<UUID> = []
 
   var body: some View {
     VStack(spacing: 16) {
+      gatePanel
       counters
       rows
     }
+  }
+
+  // MARK: the gate model itself
+  //
+  // The prompt is Cortex's, not this app's, so the only honest source is what Cortex just sent: every
+  // gate_debug refreshes this panel. "Nothing is being recognised" is usually a prompt question, and this
+  // is where you read the prompt without an SSH session.
+
+  @ViewBuilder
+  private var gatePanel: some View {
+    if let config = bridge.gateConfig {
+      Card {
+        DisclosureGroup(isExpanded: $gatePanelOpen) {
+          VStack(alignment: .leading, spacing: 12) {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
+              GridRow {
+                Stat("Avg latency (20)", bridge.gateLatencyAvgMs.map { String(format: "%.1f s", Double($0) / 1000) } ?? "—")
+                Stat("No JSON", "\(bridge.gateStats.empty)")
+                Stat("Errors", "\(bridge.gateStats.errors)")
+              }
+            }
+            DisclosureGroup("System prompt", isExpanded: $promptOpen) {
+              VStack(alignment: .leading, spacing: 8) {
+                prompt(config.systemPrompt)
+                Text("User text").font(.caption2).foregroundStyle(Theme.muted)
+                prompt(config.userText)
+              }
+              .padding(.top, 8)
+            }
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Theme.text)
+          }
+          .padding(.top, 10)
+        } label: {
+          HStack(spacing: 8) {
+            Image(systemName: "brain").foregroundStyle(Theme.accent)
+            Text("Gate model").font(Theme.section).foregroundStyle(Theme.text)
+            Spacer(minLength: 8)
+            Text(config.model).font(.caption.monospaced()).foregroundStyle(Theme.muted).lineLimit(1)
+          }
+        }
+        .tint(Theme.accent)
+      }
+    }
+  }
+
+  /// Full prompt text, selectable — you copy it into the Cortex repo when it turns out to be the problem.
+  private func prompt(_ text: String) -> some View {
+    Text(text.isEmpty ? "—" : text)
+      .font(.system(.caption2, design: .monospaced))
+      .foregroundStyle(Theme.text.opacity(0.85))
+      .textSelection(.enabled)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(10)
+      .background(RoundedRectangle(cornerRadius: 10).fill(Theme.field))
   }
 
   // MARK: live counters + diagnosis
@@ -44,6 +104,11 @@ struct FeedView: View {
           Stat("banner", "\(bridge.gateStats.banner)")
           Stat("document", "\(bridge.gateStats.document)")
           Stat("nothing", "\(bridge.gateStats.nothing)")
+        }
+        GridRow {
+          Stat("empty", "\(bridge.gateStats.empty)")
+          Stat("errors", "\(bridge.gateStats.errors)")
+          Color.clear.frame(height: 0)
         }
       }
 
@@ -95,29 +160,83 @@ struct FeedView: View {
   }
 
   private func row(_ item: FeedItem) -> some View {
-    HStack(alignment: .top, spacing: 12) {
-      thumbnail(item)
-      VStack(alignment: .leading, spacing: 4) {
-        Text(item.title)
-          .font(.caption.weight(.semibold))
-          .foregroundStyle(color(item.tint))
-          .padding(.horizontal, 8)
-          .padding(.vertical, 4)
-          .background(Capsule().fill(color(item.tint).opacity(0.14)))
-        if let sub = subtitle(item) {
-          Text(sub).font(.caption2).foregroundStyle(Theme.muted).lineLimit(2)
+    let isOpen = expanded.contains(item.id)
+    return VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .top, spacing: 12) {
+        thumbnail(item)
+        VStack(alignment: .leading, spacing: 4) {
+          Text(item.title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(color(item.tint))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(color(item.tint).opacity(0.14)))
+          if let sub = subtitle(item) {
+            Text(sub).font(.caption2).foregroundStyle(Theme.muted).lineLimit(2)
+          }
+          // What the gate call cost, and — in red — why it produced nothing.
+          if let debug = item.gateDebug {
+            Text(debug.summary).font(.caption2.monospaced()).foregroundStyle(Theme.muted).lineLimit(1)
+            if let note = debug.note {
+              Text(note)
+                .font(.caption2)
+                .foregroundStyle(Theme.danger)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Theme.danger.opacity(0.14)))
+            }
+          }
+        }
+        Spacer(minLength: 8)
+        VStack(alignment: .trailing, spacing: 2) {
+          Text(clock(item.time)).font(.caption2.monospacedDigit()).foregroundStyle(Theme.muted)
+          // Gate rows carry the round trip: frame sent → Cortex's verdict.
+          if item.kind == .gate, let latency = item.detail {
+            Text(latency).font(.caption2.monospacedDigit()).foregroundStyle(Theme.accent)
+          }
+          if item.gateDebug != nil {
+            Image(systemName: isOpen ? "chevron.up" : "chevron.down").font(.caption2).foregroundStyle(Theme.muted)
+          }
         }
       }
-      Spacer(minLength: 8)
-      VStack(alignment: .trailing, spacing: 2) {
-        Text(clock(item.time)).font(.caption2.monospacedDigit()).foregroundStyle(Theme.muted)
-        // Gate rows carry the round trip: frame sent → Cortex's verdict.
-        if item.kind == .gate, let latency = item.detail {
-          Text(latency).font(.caption2.monospacedDigit()).foregroundStyle(Theme.accent)
-        }
-      }
+      if isOpen, let debug = item.gateDebug { expansion(item, debug) }
     }
     .padding(.vertical, 8)
+    .contentShape(Rectangle())
+    .onTapGesture {
+      guard item.gateDebug != nil else { return }
+      if isOpen { expanded.remove(item.id) } else { expanded.insert(item.id) }
+    }
+  }
+
+  /// One whole gate call: the frame it judged and the model's raw text — the difference between
+  /// "the prompt is wrong" and "the model never answered".
+  private func expansion(_ item: FeedItem, _ debug: GateDebug) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      if let image = item.thumbnail {
+        Image(uiImage: image)
+          .resizable()
+          .scaledToFit()
+          .frame(maxWidth: .infinity)
+          .clipShape(RoundedRectangle(cornerRadius: 12))
+      }
+      Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
+        GridRow {
+          Stat("Latency", debug.latencyText)
+          Stat("Tokens", debug.tokensText ?? "—")
+          Stat("Stop", debug.stopReason ?? "—")
+        }
+      }
+      Text("Raw response").font(.caption2).foregroundStyle(Theme.muted)
+      Text(debug.rawResponse ?? "— the model returned no text —")
+        .font(.system(.caption2, design: .monospaced))
+        .foregroundStyle(debug.rawResponse == nil ? Theme.danger : Theme.text.opacity(0.85))
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Theme.field))
+      if let error = debug.error { Banner(text: error, kind: .error) }
+    }
   }
 
   /// The frame Cortex judged, when we still hold it; otherwise a glyph for the row's kind.

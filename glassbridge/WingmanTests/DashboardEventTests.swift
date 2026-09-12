@@ -27,6 +27,71 @@ final class DashboardEventTests: XCTestCase {
                    .gate(sessionId: "s", frameSeq: 3, gateClass: nil, orgHint: "x"))
   }
 
+  // MARK: gate_debug — the exact prompt in, the exact text out
+
+  func testDecodesGateDebug() throws {
+    let s = #"""
+    { "type": "gate_debug", "sessionId": "s_1", "frameSeq": 17, "model": "claude-opus-5",
+      "systemPrompt": "You judge one frame.", "userText": "Classify this frame.",
+      "rawResponse": "{\"class\":\"nothing\",\"orgHint\":null}", "stopReason": "end_turn",
+      "inputTokens": 918, "outputTokens": 22, "latencyMs": 2310, "error": null,
+      "result": { "class": "banner", "orgHint": "Stripe" } }
+    """#
+    guard case let .gateDebug(d) = try Wire.decodeDashboard(s) else { return XCTFail("not gate_debug") }
+    XCTAssertEqual(d.sessionId, "s_1")
+    XCTAssertEqual(d.frameSeq, 17)
+    XCTAssertEqual(d.model, "claude-opus-5")
+    XCTAssertEqual(d.systemPrompt, "You judge one frame.")
+    XCTAssertEqual(d.userText, "Classify this frame.")
+    XCTAssertEqual(d.rawResponse, #"{"class":"nothing","orgHint":null}"#)
+    XCTAssertEqual(d.stopReason, "end_turn")
+    XCTAssertEqual(d.inputTokens, 918)
+    XCTAssertEqual(d.outputTokens, 22)
+    XCTAssertEqual(d.latencyMs, 2310)
+    XCTAssertNil(d.error)
+    XCTAssertEqual(d.result?.gateClass, .banner)
+    XCTAssertEqual(d.result?.orgHint, "Stripe")
+    XCTAssertEqual(d.summary, "claude-opus-5 · 2.3 s · 918→22 tok · end_turn")
+    XCTAssertNil(d.note)
+  }
+
+  /// Every nullable field null: the timeout/no-answer shape, which is the whole point of the event.
+  func testDecodesGateDebugWithEveryNullableFieldNull() throws {
+    let s = #"""
+    { "type": "gate_debug", "sessionId": "s_1", "frameSeq": 4, "model": "claude-opus-5",
+      "systemPrompt": "p", "userText": "u", "rawResponse": null, "stopReason": null,
+      "inputTokens": null, "outputTokens": null, "latencyMs": 4000, "error": null, "result": null }
+    """#
+    guard case let .gateDebug(d) = try Wire.decodeDashboard(s) else { return XCTFail("not gate_debug") }
+    XCTAssertNil(d.rawResponse)
+    XCTAssertNil(d.stopReason)
+    XCTAssertNil(d.inputTokens)
+    XCTAssertNil(d.outputTokens)
+    XCTAssertNil(d.error)
+    XCTAssertNil(d.result)
+    XCTAssertEqual(d.summary, "claude-opus-5 · 4.0 s")
+    XCTAssertEqual(d.note, "no JSON returned (stop: unknown)")
+
+    let maxTokens = #"{ "type": "gate_debug", "frameSeq": 5, "latencyMs": 4000, "stopReason": "max_tokens", "error": "gate timeout after 4000ms" }"#
+    guard case let .gateDebug(t) = try Wire.decodeDashboard(maxTokens) else { return XCTFail("not gate_debug") }
+    XCTAssertEqual(t.note, "gate timeout after 4000ms")   // the error wins over the generic no-JSON note
+  }
+
+  /// Cortex grows fields (and classes) without asking us; neither may cost us the event.
+  func testGateDebugToleratesUnknownFieldsAndClasses() throws {
+    let s = #"""
+    { "type": "gate_debug", "sessionId": "s_1", "frameSeq": 9, "model": "m", "systemPrompt": "p",
+      "userText": "u", "rawResponse": "{}", "stopReason": "end_turn", "inputTokens": 1, "outputTokens": 2,
+      "latencyMs": 10, "thinkingTokens": 900, "cacheReadTokens": 12,
+      "result": { "class": "whiteboard", "orgHint": null, "why": "new" } }
+    """#
+    guard case let .gateDebug(d) = try Wire.decodeDashboard(s) else { return XCTFail("not gate_debug") }
+    XCTAssertEqual(d.frameSeq, 9)
+    XCTAssertNil(d.result?.gateClass)   // unknown class degrades to nil, never an error
+    XCTAssertNil(d.result?.orgHint)
+    XCTAssertEqual(d.summary, "m · 0.0 s · 1→2 tok · end_turn")
+  }
+
   func testDecodesSilencedIdentify() throws {
     let s = #"{ "type": "silenced_identify", "sessionId": "s_42", "nameGuess": "Ada Lovelace", "confidence": 0.42 }"#
     XCTAssertEqual(try Wire.decodeDashboard(s),
