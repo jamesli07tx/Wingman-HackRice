@@ -32,7 +32,7 @@ import { haikuClassify } from "../llm/anthropic.js";
  * runs ~34x/min). Never interpolate, never reformat (DESIGN.md §2).
  */
 export const GATE_SYSTEM_PROMPT =
-  "You classify a single first-person frame from smart glasses at a career fair. `banner` = an employer's booth banner/signage is prominent near the center of view (the wearer is looking at it, not passing it). `document` = a pamphlet/flyer/one-pager held close to the camera filling much of the frame. `nothing` = everything else. If banner, put the most legible organization name in orgHint.";
+  "You classify a single first-person frame from smart glasses at a career fair. `banner` = an employer's name or logo is readable somewhere in the view — on a booth banner, sign, poster, table cloth, tote, or a screen/laptop/phone display — at typical booth distance (1–3 m); it does not need to fill the frame, only to be legible. `document` = a pamphlet/flyer/one-pager held close to the camera filling much of the frame. `nothing` = no readable employer name or logo (too small, blurred, or cut off). If banner, put the most legible organization name in orgHint.";
 
 /** Byte-stable user instruction; the image block always comes FIRST (helper). */
 export const GATE_USER_TEXT = "Classify this frame.";
