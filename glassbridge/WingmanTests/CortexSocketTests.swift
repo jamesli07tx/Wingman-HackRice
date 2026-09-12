@@ -128,6 +128,25 @@ final class CortexSocketTests: XCTestCase {
     sock.disconnect()
   }
 
+  /// The `session_end` path calls endSession(), which clears wantsSession WITHOUT sending a session_stop —
+  /// so a later reconnect must NOT resurrect the ended session by replaying session_start.
+  func testStopSessionPreventsSessionStartReplayOnReconnect() throws {
+    let port = UInt16.random(in: 20000...40000)
+    var server = TestWSServer(port: port); try server.start()
+    let sock = CortexSocket(url: URL(string: "ws://127.0.0.1:\(port)/ws/device")!, token: "t")
+    sock.maxBackoff = 2
+    sock.connect(); sock.startSession()
+    XCTAssertTrue(server.wait { self.types($0) == ["hello", "session_start"] }, "got \(server.received)")
+    sock.endSession()
+    server.stop()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+    server = TestWSServer(port: port); try server.start(); defer { server.stop() }
+    XCTAssertTrue(server.wait(timeout: 15) { self.types($0).contains("hello") }, "no reconnect: \(server.received)")
+    RunLoop.main.run(until: Date().addingTimeInterval(1))   // give a (wrong) session_start time to show up
+    XCTAssertEqual(types(server.received), ["hello", "status"], "replayed session_start: \(server.received)")
+    sock.disconnect()
+  }
+
   /// disconnect() must invalidate the URLSession (which retains its delegate) so the socket can deallocate
   /// — a leaked one keeps shouldRun == true and reconnects forever as a zombie device.
   func testDisconnectInvalidatesSessionSoSocketDeallocates() throws {

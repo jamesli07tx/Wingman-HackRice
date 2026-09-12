@@ -62,7 +62,7 @@ struct StatusView: View {
             Button("Stop", role: .destructive) { bridge.stop() }
             LabeledContent("Session", value: bridge.sessionId ?? "-")
           } else {
-            Button("Start") { bridge.start() }.disabled(bridge.linkState == .unlinked)
+            Button("Start") { bridge.start() }.disabled(bridge.linkState == .unlinked || bridge.spikeRunning)
           }
           LabeledContent("Frames sent", value: "\(bridge.framesSent)")
           LabeledContent("Battery", value: batteryText)
@@ -79,7 +79,7 @@ struct StatusView: View {
         Section("Debug") {
           Toggle("Use DevHarness", isOn: $bridge.useDevHarness)
           LabeledContent("WS", value: bridge.wsURL.absoluteString).font(.footnote)
-          Button("Run hour-zero spike (camera + display)") { Task { await bridge.runSpike() } }.disabled(bridge.armed)
+          Button("Run hour-zero spike (camera + display)") { Task { await bridge.runSpike() } }.disabled(bridge.armed || bridge.spikeRunning)
           if let r = bridge.spikeResult { Text(r).font(.footnote) }
           Button(bridge.testFramesRunning ? "Stop test frames" : "Send test frames (Simulator)") { bridge.startTestFrames() }
         }

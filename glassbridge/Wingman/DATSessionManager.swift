@@ -174,7 +174,9 @@ final class DATSessionManager: ObservableObject {
       d.statePublisher.listen { [weak self] st in Task { @MainActor in self?.displayState = st } }.store(in: sessionBag)
       d.start()
     } catch {
-      stop()
+      // Only tear down if `s` is still the live session: a Stop→Start while this start() was suspended (the
+      // handshake, or the Meta AI camera-permission bounce) means stop() here would kill the NEW session.
+      if session === s { stop() }
       throw error
     }
   }

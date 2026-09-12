@@ -9,6 +9,12 @@
 // COUNTERPART: the real Cortex (cortex/src/index.ts on Fly.io) replaces this whole file on integration day
 // CONTRACT: DESIGN.md §4.1 /api/devices/claim, §4.2 device WebSocket
 // AT-INTEGRATION: INTEGRATION-DAY: nothing to change here — stop using it: turn off "Use DevHarness" in StatusView (or set a real CORTEX_WS_URL).
+//
+// INTEGRATION: DevHarness
+// IN:  POST /api/devices/claim; device→cortex WS messages (hello, session_start/stop, frame, photo, photo_error, status)
+// OUT: claim response { deviceId, deviceToken }; cortex→device WS messages (armed, render, capture_photo, error, session_end);
+//      one ✓/✗ log line per message (shape validation, frame cadence + KB)
+// WIRE: `node harness.mjs` on the Mac; the app points at it while StatusView Debug → "Use DevHarness" is on (DEV_HARNESS_URL)
 import http from "node:http";
 import fs from "node:fs";
 import { WebSocketServer } from "ws";
@@ -82,6 +88,7 @@ const wss = new WebSocketServer({ server, path: "/ws/device" });
 wss.on("connection", (ws, req) => {
   const token = new URL(req.url, "http://x").searchParams.get("token");
   log(`WS connected token=${token ?? "MISSING"} from ${req.socket.remoteAddress}`);
+  ws.on("error", (e) => log("✗ ws error", e.message));   // e.g. ECONNRESET when the phone drops Wi-Fi — must not kill the harness
   if (!token) { log("✗ no token → closing 4401"); return ws.close(4401, "missing token"); }
 
   let seq = 10, lastFrameAt = 0, frames = 0, timers = [], armed = false;
@@ -116,7 +123,9 @@ wss.on("connection", (ws, req) => {
       case "session_start":
         timers.forEach(clearTimeout); timers = [];   // idempotent: a re-Start must not stack a second copy of the script
         log("✓ session_start → armed"); armed = true; frames = 0; lastFrameAt = 0;
-        send({ type: "armed", sessionId: "s_42", config: CONFIG }); script(); break;
+        // A fresh id per session_start, as real Cortex will do — so the reconnect check exercises the
+        // "new sessionId while armed" path (a config update, never a DAT restart) instead of a constant id.
+        send({ type: "armed", sessionId: `s_${Date.now().toString(36)}`, config: CONFIG }); script(); break;
       case "session_stop": log("✓ session_stop"); endSession("user_stop"); break;
       case "frame": {
         const bytes = Buffer.from(msg.dataBase64, "base64");
@@ -139,7 +148,6 @@ wss.on("connection", (ws, req) => {
     }
   });
   ws.on("close", (code) => { log(`WS closed ${code} after ${frames} frames`); timers.forEach(clearTimeout); });
-  ws.on("error", (e) => log("✗ ws error", e.message));   // e.g. ECONNRESET when the phone drops Wi-Fi — must not kill the harness
 });
 
 // e.g. EADDRINUSE: say so in one line, don't stack-trace. `ws` re-emits the http server's error on the

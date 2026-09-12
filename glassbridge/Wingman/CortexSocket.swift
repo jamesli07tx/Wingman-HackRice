@@ -71,6 +71,8 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
 
   func startSession() { q.async { self.wantsSession = true; self.sendLocked(.sessionStart) } }
   func stopSession() { q.async { self.wantsSession = false; self.sendLocked(.sessionStop) } }
+  /// Cortex already ended the session: stop replaying session_start on reconnect, but send nothing.
+  func endSession() { q.async { self.wantsSession = false } }
   func send(_ msg: DeviceToCortex) { q.async { self.sendLocked(msg) } }
 
   // MARK: internals — everything below runs on q

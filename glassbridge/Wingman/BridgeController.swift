@@ -30,6 +30,7 @@ final class BridgeController: ObservableObject {
   @Published private(set) var lastCard: HudCard?
   @Published private(set) var framesSent = 0
   @Published private(set) var spikeResult: String?
+  @Published private(set) var spikeRunning = false
   @Published private(set) var testFramesRunning = false
   @Published var useDevHarness: Bool {
     didSet {
@@ -147,12 +148,17 @@ final class BridgeController: ObservableObject {
   }
 
   private func arm(sessionId newSessionId: String, config: ArmedConfig?) {
+    // The spike owns the DAT session for its duration (runSpike refuses to start while armed; this is the
+    // other half of that deal).
+    guard !spikeRunning else { NSLog("ignoring armed \(newSessionId): the hour-zero spike is running"); return }
     let cfg = config ?? .defaults
     NSLog("armed.config: compiled=\(ArmedConfig.defaults) received=\(String(describing: config)) → using \(cfg)")
 
-    // A repeated `armed` for the session we are already running is a config update, not a restart:
-    // re-entering the hardware path would tear down a working DAT session (start() begins with stop()).
-    if armed, sessionId == newSessionId {
+    // ANY `armed` while we are already armed is a sessionId + config update, never a restart. The DAT session
+    // belongs to the user's Start/Stop, not to Cortex's session id: a WS blip makes Cortex mint a NEW sessionId,
+    // and re-entering the hardware path would tear down a working session (start() begins with stop()).
+    if armed {
+      sessionId = newSessionId
       sampler.apply(cfg)
       renderer?.apply(renderMinGapMs: cfg.renderMinGapMs)
       return
@@ -186,7 +192,7 @@ final class BridgeController: ObservableObject {
   }
 
   private func disarm() {
-    armTask?.cancel(); armTask = nil
+    armTask?.cancel()        // NOT nil'd: the next arm() must still await it, or a slow dat.start() races the new one
     armed = false
     sessionId = nil
     pendingPhotoReqIds.removeAll()
@@ -217,9 +223,10 @@ final class BridgeController: ObservableObject {
       renderer?.render(card)
     case let .sessionEnd(reason):
       NSLog("session_end: \(reason)")
-      // Clears CortexSocket.wantsSession too, so a later reconnect does not resurrect the ended session by
-      // re-sending session_start. A redundant session_stop to an already-ended session is contract-legal.
-      socket?.stopSession()
+      // Clears CortexSocket.wantsSession so a later reconnect does not resurrect the ended session by
+      // re-sending session_start — WITHOUT emitting a session_stop nobody asked for (a dumb pipe doesn't, and
+      // it would race a dashboard re-Start landing within one RTT).
+      socket?.endSession()
       disarm()
     case let .error(code, message, recoverable):
       lastError = "\(code.rawValue): \(message)\(recoverable ? "" : " (fatal)")"
@@ -257,7 +264,9 @@ final class BridgeController: ObservableObject {
     simulatorFrameTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
       Task { @MainActor in
         guard let self else { return }
-        let img = UIGraphicsImageRenderer(size: CGSize(width: 1280, height: 720)).image { ctx in
+        let fmt = UIGraphicsImageRendererFormat.default()
+        fmt.scale = 1                     // else the renderer draws at screen scale: 3× → 3840×2160, not 1280×720
+        let img = UIGraphicsImageRenderer(size: CGSize(width: 1280, height: 720), format: fmt).image { ctx in
           UIColor(hue: CGFloat(Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10)) / 10, saturation: 0.6, brightness: 0.9, alpha: 1).setFill()
           ctx.fill(CGRect(x: 0, y: 0, width: 1280, height: 720))
           ("TEST FRAME \(Date())" as NSString).draw(at: CGPoint(x: 40, y: 40), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 48), .foregroundColor: UIColor.black])
@@ -276,14 +285,25 @@ final class BridgeController: ObservableObject {
   /// wait for a real frame, then render a hello-world card. Independent of Cortex, and it owns the DAT session
   /// for its duration, so it refuses to run while a real session is armed.
   func runSpike() async {
-    guard !armed else { spikeResult = "Stop the session first"; return }
+    guard !armed, !spikeRunning else { spikeResult = "Stop the session first"; return }
+    spikeRunning = true                 // blocks Start and a dashboard-pushed `armed` for the spike's duration
+    defer { spikeRunning = false }
     spikeResult = "SPIKE running…"
     #if canImport(MWDATCore)
     guard let dat else { spikeResult = "SPIKE N/A: \(DATSessionManager.configureError ?? "DAT not configured")"; return }
     guard DATSessionManager.isHardwareAvailable else { spikeResult = "SPIKE N/A in Simulator"; return }
     defer { dat.stop() }
     do {
-      try await dat.start()
+      // dat.start() has no deadline of its own: if the handshake never reaches .started/.stopped the gate would
+      // sit at "SPIKE running…" forever. Race it against 30 s — the gate must always end in OK or FAIL.
+      let started = try await withThrowingTaskGroup(of: Bool.self) { group in
+        group.addTask { try await dat.start(); return true }
+        group.addTask { try await Task.sleep(nanoseconds: 30_000_000_000); return false }
+        let first = try await group.next()!
+        group.cancelAll()
+        return first
+      }
+      guard started else { spikeResult = "SPIKE FAIL: start() timed out (session=\(dat.sessionState))"; return }
       let start = Date()
       while dat.frameCount == 0 && Date().timeIntervalSince(start) < 20 { try await Task.sleep(nanoseconds: 200_000_000) }
       guard dat.frameCount > 0 else { spikeResult = "SPIKE FAIL: no camera frame within 20 s (stream=\(dat.streamState)) \(dat.lastError ?? "")"; return }

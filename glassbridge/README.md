@@ -50,9 +50,18 @@ xcodebuild -project Wingman.xcodeproj -scheme Wingman \
 ```
 
 - **Simulator-degraded:** DAT's `Wearables.configure()` fails in the Simulator (no team, no
-  registration), so the Glasses/Stream/Display dots read `unavailable` and the spike reports
-  `SPIKE N/A`. Everything else still works: link, Cortex/DevHarness socket, Debug →
+  registration), so Connections shows a single red **Glasses** row reading `DAT unavailable: …` (there
+  are no Stream/Display rows — there is no DAT session to report on) and the spike reports `SPIKE N/A`.
+  Everything else still works: link, Cortex/DevHarness socket, Debug →
   "Send test frames (Simulator)" pushes synthetic JPEGs through the real `frame` path.
+- **Background modes:** `UIBackgroundModes` carries `bluetooth-central`, `bluetooth-peripheral` and
+  `processing` in addition to `audio` (the silent keepalive) because the DAT SDK needs exactly those
+  three to keep the glasses' Bluetooth link alive in the background (`docs/dat-0.9.0-api-notes.md` §8)
+  — so the capability sheet showing four background modes is expected, not a leftover.
+- **Mock Device Kit:** `MWDATMockDevice` is linked but unused — the pre-hardware camera path is the
+  synthetic Simulator frames above, not a mocked device (the mock has no display model anyway). The
+  consequence: the DAT→FrameSampler seam (`cgImage(from:)` and the listener wiring) is first exercised
+  on real glasses, at the spike.
 
 ## 3. Tests
 
@@ -130,15 +139,15 @@ grep -rn "INTEGRATION(X-MACHINE)" glassbridge --include='*.swift' --include='*.x
 ```
 glassbridge/Config.xcconfig:5
 glassbridge/DevHarness/harness.mjs:8
-glassbridge/Wingman/BridgeController.swift:4
-glassbridge/Wingman/LinkClient.swift:3
-glassbridge/Wingman/Protocol.swift:3
-glassbridge/Wingman/AudioKeepalive.swift:6
-glassbridge/Wingman/Config.swift:3
 glassbridge/Wingman/FrameSampler.swift:4
+glassbridge/Wingman/LinkClient.swift:3
+glassbridge/Wingman/Config.swift:3
 glassbridge/Wingman/CortexSocket.swift:4
+glassbridge/Wingman/Protocol.swift:3
 glassbridge/Wingman/StatusView.swift:4
+glassbridge/Wingman/BridgeController.swift:4
 glassbridge/Wingman/HudRenderer.swift:10
+glassbridge/Wingman/AudioKeepalive.swift:6
 ```
 
 Deferred actions — `grep -rn "INTEGRATION-DAY" glassbridge --include='*.swift' --include='*.xcconfig' --include='*.mjs'`:
@@ -155,8 +164,8 @@ Wingman/CortexSocket.swift:7: swap DEV_HARNESS_URL for CORTEX_WS_URL — BridgeC
   a `hello` with deviceType "glasses_bridge" arrives in Cortex logs after link.
 ```
 
-Line numbers in `BridgeController.swift` / `StatusView.swift` may shift after a pending fix — **re-run
-the greps** rather than trusting the numbers above. Drop `--include` to also see the plan doc.
+Line numbers shift whenever a header changes — **re-run the greps** rather than trusting the numbers
+above. Drop `--include` to also see the plan doc.
 
 **Integration-day sequence (DESIGN_MAC.md §0.6, human-driven, ~15 min):** ① Windows side deploys Cortex
 → human gets the `wss://…fly.dev` URL. ② Human sets it in `glassbridge/Config.local.xcconfig`, rebuilds
