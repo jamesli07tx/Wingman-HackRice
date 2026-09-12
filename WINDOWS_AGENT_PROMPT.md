@@ -27,6 +27,19 @@ Hard rules (merge contract, §0 of your doc):
   covering every row of your doc's required-sites table; every module seam gets
   the // INTEGRATION: block per DESIGN.md §7.
 
+Subagents: you are the orchestrator. Fan the work out to as many parallel
+Opus 5 subagents as the dependency order allows — but you alone decide the
+split, and you may only spawn subagents whose file sets are disjoint. The same
+ownership logic that keeps the two machines from clashing applies inside your
+half: one subagent per package or module (shared/, each cortex module, each
+console page, corpus/), never two subagents writing the same file, and all
+cross-cutting files (root configs, cortex/src/index.ts wiring, package.json,
+shared/ after its freeze) edited only by you. shared/ must be finished and
+frozen before anything that imports it fans out. You integrate subagent
+results at the seams — that is exactly what the // INTEGRATION: blocks are
+for — and you run every acceptance check yourself; subagent claims of "done"
+don't count until your check passes.
+
 Working directory: this folder — already a git repo wired to
 https://github.com/jamesli07tx/Wingman-HackRice (branch master). Scaffold the
 monorepo here per DESIGN.md Appendix B (minus glassbridge/), commit in small

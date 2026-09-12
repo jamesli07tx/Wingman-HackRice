@@ -33,6 +33,18 @@ Hard rules (merge contract, §0 of your doc):
   covering every row of your doc's required-sites table; every module seam gets
   the // INTEGRATION: block per DESIGN.md §7.
 
+Subagents: you are the orchestrator. Fan the work out to as many parallel
+Opus 5 subagents as the dependency order allows — but you alone decide the
+split, and you may only spawn subagents whose file sets are disjoint.
+Protocol.swift comes first (everything imports it); after that, FrameSampler,
+HudRenderer, CortexSocket, AudioKeepalive, StatusView, DevHarness, and the
+XCTest target are naturally parallel — one subagent each, never two on the
+same file. One hard exception: project.pbxproj (the Xcode project file) is a
+single shared file that every file-add mutates — subagents write Swift source
+files only; you alone register them in the Xcode project, serially, in one
+pass. You integrate subagent results at the seams and run every acceptance
+check yourself; subagent claims of "done" don't count until your check passes.
+
 Build the Xcode project per DESIGN_MAC.md §1.1 exactly: iOS 17.2 minimum,
 DAT package pinned at 0.9.0, Background Modes → Audio, the listed Info.plist
 keys (no microphone key), the Config.xcconfig / Config.local.xcconfig split
