@@ -8,12 +8,28 @@
 
 /* Begin PBXBuildFile section */
 		0228D3C416FE871855936A42 /* Config.swift in Sources */ = {isa = PBXBuildFile; fileRef = 143BCCD11C10823E0FE76773 /* Config.swift */; };
+		28EFD650701818507AD3479B /* LinkClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCC25DB79E1DE6F8F326AF89 /* LinkClient.swift */; };
 		2D15653EBD475A19CD4B599F /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = 3A06EC881660F69955A32CF4 /* MWDATCore */; };
+		439BCBEA8EA2A7A130F82AA0 /* ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D346CE90D2263A955B0548 /* ConfigTests.swift */; };
+		5991DB0D1B49D041A4AB1F48 /* HudRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0B19928FD4A4A9D1E5BA67 /* HudRenderer.swift */; };
+		6E327B0C3711E94CF987960A /* BridgeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */; };
 		77A9F5FB014A699F5E98461C /* MWDATDisplay in Frameworks */ = {isa = PBXBuildFile; productRef = 051F88B26B24B66896A7301A /* MWDATDisplay */; };
+		7811386F5ADEAB7B3C1E1E12 /* FrameSamplerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F99647213394E553B9B06A1 /* FrameSamplerTests.swift */; };
+		7AE3868FED6F5D978CACF325 /* FrameSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B905996BC4B5066EF1676CE4 /* FrameSampler.swift */; };
+		7B95AC42F2B040925A25E17D /* CortexSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00B1743B6CEFEFAD09B8640D /* CortexSocket.swift */; };
+		83FC20D913FEF067839B92EE /* DATSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4E2559DD38650D0279ED945 /* DATSessionManager.swift */; };
+		892E9DC02C8888FC6C4FCBA3 /* HudRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86E2FB8D175F61D4C454B1C4 /* HudRendererTests.swift */; };
+		987862019755A7A14601D102 /* CortexSocketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9133B46962B158E4F2E3A993 /* CortexSocketTests.swift */; };
+		A1A14E23DFAAABF82EF7822B /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DDCA354D98AA777F6C1DC6A /* Protocol.swift */; };
 		A630922F9FFB9655239DDF89 /* MWDATMockDevice in Frameworks */ = {isa = PBXBuildFile; productRef = 551A33E94F933CE3487829C2 /* MWDATMockDevice */; };
 		B1247B78B2908D8A301D708C /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = E21C50607EFEF51382155EA3 /* App.swift */; };
+		E0D042DE9157B542BE4DBD45 /* AudioKeepalive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91E1F270FDCD149BDB64A530 /* AudioKeepalive.swift */; };
 		E0D79558D27AB1B1701D850D /* TestImports.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B999F287269B7E1837BD035 /* TestImports.swift */; };
 		E745F43A777292E86588A26D /* MWDATCamera in Frameworks */ = {isa = PBXBuildFile; productRef = 57B63325D7E952950D95B12B /* MWDATCamera */; };
+		E9CF1EF44C122606783F2519 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DE643D98754CE9814885F3C /* Keychain.swift */; };
+		EC7C75E268EA6301D25682CA /* ProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BAA48A486D131CD46686C35 /* ProtocolTests.swift */; };
+		EFBBD2EFDC0D09C7FDA5EFB0 /* SilentWavTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C5F67BFF1CFE221F3B5CEFB /* SilentWavTests.swift */; };
+		F8087E2454E835B8121411CA /* StatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33EA1E64460AA041BA3FAB4A /* StatusView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -27,12 +43,28 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		00B1743B6CEFEFAD09B8640D /* CortexSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CortexSocket.swift; sourceTree = "<group>"; };
 		143BCCD11C10823E0FE76773 /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
+		1C5F67BFF1CFE221F3B5CEFB /* SilentWavTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilentWavTests.swift; sourceTree = "<group>"; };
+		33EA1E64460AA041BA3FAB4A /* StatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusView.swift; sourceTree = "<group>"; };
+		3DDCA354D98AA777F6C1DC6A /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
+		3F99647213394E553B9B06A1 /* FrameSamplerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSamplerTests.swift; sourceTree = "<group>"; };
+		45D346CE90D2263A955B0548 /* ConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigTests.swift; sourceTree = "<group>"; };
 		5B999F287269B7E1837BD035 /* TestImports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestImports.swift; sourceTree = "<group>"; };
+		86E2FB8D175F61D4C454B1C4 /* HudRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HudRendererTests.swift; sourceTree = "<group>"; };
+		8BAA48A486D131CD46686C35 /* ProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolTests.swift; sourceTree = "<group>"; };
+		9133B46962B158E4F2E3A993 /* CortexSocketTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CortexSocketTests.swift; sourceTree = "<group>"; };
+		91E1F270FDCD149BDB64A530 /* AudioKeepalive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioKeepalive.swift; sourceTree = "<group>"; };
 		970DEEBD81E055098925660A /* WingmanTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = WingmanTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9DE643D98754CE9814885F3C /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
+		A4E2559DD38650D0279ED945 /* DATSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DATSessionManager.swift; sourceTree = "<group>"; };
+		AB0B19928FD4A4A9D1E5BA67 /* HudRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HudRenderer.swift; sourceTree = "<group>"; };
+		B905996BC4B5066EF1676CE4 /* FrameSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSampler.swift; sourceTree = "<group>"; };
+		DCC25DB79E1DE6F8F326AF89 /* LinkClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkClient.swift; sourceTree = "<group>"; };
 		E21C50607EFEF51382155EA3 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		F2FE628C0697A064C96F62AF /* Wingman.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Wingman.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		"TEMP_82E5636B-9915-48B8-8B41-3E8D18DB988A" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeController.swift; sourceTree = "<group>"; };
+		"TEMP_B72D39B7-7120-451C-9F99-4FAEDFE22F2E" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,6 +85,12 @@
 		17B0354BE104D955D940C546 /* WingmanTests */ = {
 			isa = PBXGroup;
 			children = (
+				45D346CE90D2263A955B0548 /* ConfigTests.swift */,
+				9133B46962B158E4F2E3A993 /* CortexSocketTests.swift */,
+				3F99647213394E553B9B06A1 /* FrameSamplerTests.swift */,
+				86E2FB8D175F61D4C454B1C4 /* HudRendererTests.swift */,
+				8BAA48A486D131CD46686C35 /* ProtocolTests.swift */,
+				1C5F67BFF1CFE221F3B5CEFB /* SilentWavTests.swift */,
 				5B999F287269B7E1837BD035 /* TestImports.swift */,
 			);
 			path = WingmanTests;
@@ -71,7 +109,17 @@
 			isa = PBXGroup;
 			children = (
 				E21C50607EFEF51382155EA3 /* App.swift */,
+				91E1F270FDCD149BDB64A530 /* AudioKeepalive.swift */,
+				F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */,
 				143BCCD11C10823E0FE76773 /* Config.swift */,
+				00B1743B6CEFEFAD09B8640D /* CortexSocket.swift */,
+				A4E2559DD38650D0279ED945 /* DATSessionManager.swift */,
+				B905996BC4B5066EF1676CE4 /* FrameSampler.swift */,
+				AB0B19928FD4A4A9D1E5BA67 /* HudRenderer.swift */,
+				9DE643D98754CE9814885F3C /* Keychain.swift */,
+				DCC25DB79E1DE6F8F326AF89 /* LinkClient.swift */,
+				3DDCA354D98AA777F6C1DC6A /* Protocol.swift */,
+				33EA1E64460AA041BA3FAB4A /* StatusView.swift */,
 			);
 			path = Wingman;
 			sourceTree = "<group>";
@@ -85,10 +133,10 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		"TEMP_DB7BB048-FE62-48F1-9EB8-B269776C5A5B" /* glassbridge */ = {
+		"TEMP_3C6227F4-F768-4FE8-A700-30E60043E863" /* glassbridge */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_82E5636B-9915-48B8-8B41-3E8D18DB988A" /* Config.xcconfig */,
+				"TEMP_B72D39B7-7120-451C-9F99-4FAEDFE22F2E" /* Config.xcconfig */,
 			);
 			path = glassbridge;
 			sourceTree = "<group>";
@@ -184,7 +232,17 @@
 			buildActionMask = 2147483647;
 			files = (
 				B1247B78B2908D8A301D708C /* App.swift in Sources */,
+				E0D042DE9157B542BE4DBD45 /* AudioKeepalive.swift in Sources */,
+				6E327B0C3711E94CF987960A /* BridgeController.swift in Sources */,
 				0228D3C416FE871855936A42 /* Config.swift in Sources */,
+				7B95AC42F2B040925A25E17D /* CortexSocket.swift in Sources */,
+				83FC20D913FEF067839B92EE /* DATSessionManager.swift in Sources */,
+				7AE3868FED6F5D978CACF325 /* FrameSampler.swift in Sources */,
+				5991DB0D1B49D041A4AB1F48 /* HudRenderer.swift in Sources */,
+				E9CF1EF44C122606783F2519 /* Keychain.swift in Sources */,
+				28EFD650701818507AD3479B /* LinkClient.swift in Sources */,
+				A1A14E23DFAAABF82EF7822B /* Protocol.swift in Sources */,
+				F8087E2454E835B8121411CA /* StatusView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -192,6 +250,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				439BCBEA8EA2A7A130F82AA0 /* ConfigTests.swift in Sources */,
+				987862019755A7A14601D102 /* CortexSocketTests.swift in Sources */,
+				7811386F5ADEAB7B3C1E1E12 /* FrameSamplerTests.swift in Sources */,
+				892E9DC02C8888FC6C4FCBA3 /* HudRendererTests.swift in Sources */,
+				EC7C75E268EA6301D25682CA /* ProtocolTests.swift in Sources */,
+				EFBBD2EFDC0D09C7FDA5EFB0 /* SilentWavTests.swift in Sources */,
 				E0D79558D27AB1B1701D850D /* TestImports.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -266,7 +330,7 @@
 		};
 		9D6513D9C82CCE7BD3D4DAB1 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_82E5636B-9915-48B8-8B41-3E8D18DB988A" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_B72D39B7-7120-451C-9F99-4FAEDFE22F2E" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -331,7 +395,7 @@
 		};
 		DABFDCF87C106D2CAF6C5A18 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_82E5636B-9915-48B8-8B41-3E8D18DB988A" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_B72D39B7-7120-451C-9F99-4FAEDFE22F2E" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
