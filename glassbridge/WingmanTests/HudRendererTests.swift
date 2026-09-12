@@ -12,7 +12,7 @@ final class HudRendererTests: XCTestCase {
   func testBurstCoalescesToFirstThenLatest() {
     let q = DispatchQueue(label: "test.coalescer")
     var drawn: [HudCard] = []
-    let c = RenderCoalescer(minGapMs: 500, queue: q) { drawn.append($0) }
+    let c = RenderCoalescer(minGapMs: 500, queue: q) { card, done in drawn.append(card); done() }
     for i in 1...5 { c.submit(card(i)); Thread.sleep(forTimeInterval: 0.04) }   // 5 submits in ~200 ms
     Thread.sleep(forTimeInterval: 0.9)
     q.sync {}
@@ -22,7 +22,7 @@ final class HudRendererTests: XCTestCase {
   func testSpacedSubmitsDrawImmediately() {
     let q = DispatchQueue(label: "test.coalescer2")
     var drawn: [Int] = []
-    let c = RenderCoalescer(minGapMs: 100, queue: q) { drawn.append($0.seq) }
+    let c = RenderCoalescer(minGapMs: 100, queue: q) { card, done in drawn.append(card.seq); done() }
     c.submit(card(1)); Thread.sleep(forTimeInterval: 0.15)
     c.submit(card(2)); Thread.sleep(forTimeInterval: 0.15)
     q.sync {}
@@ -32,11 +32,37 @@ final class HudRendererTests: XCTestCase {
   func testMinGapCanBeRetunedAtRuntime() {
     let q = DispatchQueue(label: "test.coalescer3")
     var drawn: [Int] = []
-    let c = RenderCoalescer(minGapMs: 2000, queue: q) { drawn.append($0.seq) }
-    c.minGapMs = 50
+    let c = RenderCoalescer(minGapMs: 2000, queue: q) { card, done in drawn.append(card.seq); done() }
+    c.setMinGapMs(50)
     c.submit(card(1)); Thread.sleep(forTimeInterval: 0.02); c.submit(card(2))
     Thread.sleep(forTimeInterval: 0.2); q.sync {}
     XCTAssertEqual(drawn, [1, 2])
+  }
+
+  /// A BLE send can outlast minGapMs. Two full-screen replaces must never overlap (a stale card could land
+  /// last), so cards submitted mid-flight only replace `pending` and the newest one draws after completion.
+  func testSlowDrawSerializesAndOnlyLatestFollows() {
+    let q = DispatchQueue(label: "test.coalescer4")
+    let sender = DispatchQueue(label: "test.slowsend")
+    var drawn: [Int] = []
+    var inFlight = 0
+    var maxInFlight = 0
+    let c = RenderCoalescer(minGapMs: 100, queue: q) { card, done in
+      drawn.append(card.seq)
+      inFlight += 1
+      maxInFlight = max(maxInFlight, inFlight)
+      sender.asyncAfter(deadline: .now() + 0.3) {     // a 300 ms display.send — 3× minGapMs
+        q.async { inFlight -= 1 }
+        done()
+      }
+    }
+    c.submit(card(1))                                            // starts the slow draw
+    Thread.sleep(forTimeInterval: 0.05); c.submit(card(2))       // both land mid-flight
+    Thread.sleep(forTimeInterval: 0.05); c.submit(card(3))
+    Thread.sleep(forTimeInterval: 0.8)
+    q.sync {}
+    XCTAssertEqual(drawn, [1, 3])
+    XCTAssertEqual(maxInFlight, 1)
   }
 
   func testClipNeverExceedsMaxAndEndsWithEllipsis() {
@@ -44,6 +70,12 @@ final class HudRendererTests: XCTestCase {
     let long = String(repeating: "x", count: 60)
     XCTAssertEqual(HudText.clip(long).count, 44)
     XCTAssertTrue(HudText.clip(long).hasSuffix("…"))
+  }
+
+  /// A card line must never expand into extra rows on a screen that only scrolls vertically.
+  func testClipFlattensNewlines() {
+    XCTAssertEqual(HudText.clip("two\nrows"), "two rows")
+    XCTAssertFalse(HudText.clip("a\r\nb\rc").contains(where: \.isNewline))
   }
 
   func testLinesCappedAtFive() {
