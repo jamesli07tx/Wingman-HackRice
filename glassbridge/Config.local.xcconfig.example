@@ -1,0 +1,8 @@
+// Copy to Config.local.xcconfig (gitignored) and fill in. Values here override Config.xcconfig.
+// URLs: write "//" as "/$()/" — xcconfig treats "//" as a comment start.
+CORTEX_URL = https:/$()/wingman-cortex.fly.dev
+CORTEX_WS_URL = wss:/$()/wingman-cortex.fly.dev/ws/device
+DEV_HARNESS_URL = ws:/$()/192.168.1.23:8787/ws/device
+DEVELOPMENT_TEAM = ABCDE12345
+META_APP_ID = 0
+META_CLIENT_TOKEN =

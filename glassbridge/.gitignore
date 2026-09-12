@@ -1,0 +1,12 @@
+# glassbridge/.gitignore — Mac-owned (DESIGN_MAC.md §0). Root .gitignore stays Node-only.
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.build/
+.swiftpm/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+# real URLs / team ID live here, never committed (DESIGN_MAC.md §1.1)
+Config.local.xcconfig
+DevHarness/node_modules/
+DevHarness/frames/
