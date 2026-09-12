@@ -361,7 +361,7 @@ Scripts (run locally, write to Supabase): `ingest-csv.ts` (P3 maintains `compani
 
 - `shared/protocol.ts` is the single seam. Console, Cortex, and (mirrored) GlassBridge import/copy from it. It freezes at hour 2. `shared/constants.ts` (Appendix D) and `shared/schemas.ts` (Appendix C) live beside it.
 - Every module exports **one interface**; constructors take dependencies as arguments (poor-man's DI) so `MockDeviceAdapter`, `CorpusProvider`-only mode, etc. are one-line swaps.
-- **Every seam carries an `// INTEGRATION:` comment block** — what comes in, what goes out, which module consumes it, one-line wiring instruction. Example:
+- **Every seam carries an `// INTEGRATION:` comment block** — what comes in, what goes out, which module consumes it, one-line wiring instruction. Seams that cross the two-machine boundary additionally carry the `// INTEGRATION(X-MACHINE):` block defined in §0.7 of DESIGN_WINDOWS.md / DESIGN_MAC.md (COUNTERPART · CONTRACT · AT-INTEGRATION, plus `INTEGRATION-DAY:` markers), so integration day is a grep, not an archaeology dig. Example of the per-module block:
 
 ```ts
 // INTEGRATION: SceneGate

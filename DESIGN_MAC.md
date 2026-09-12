@@ -18,8 +18,16 @@
 2. **The wire contract is the only interface** between the two builds: the device WebSocket (§4.2), the `/api/devices/claim` REST endpoint (§4.1), `HudCard` + renderer constraints (§4.2), and the tuning constants (Appendix D, pushed at runtime via `armed.config`). **DESIGN.md is the ONLY copy of that contract.** No contract JSON is restated in this file or DESIGN_WINDOWS.md, so there is exactly one document to drift from — and it is frozen. `Protocol.swift` is transcribed from DESIGN.md §4, never inferred from `cortex/` source.
 3. **No unilateral protocol changes, ever.** If you believe a §4 / Appendix C / Appendix D change is necessary, STOP and surface it to the human. The counterpart agent cannot see your change; a "small fix" on one side is a broken demo.
 4. **Lenient decoding, strict encoding.** Emit messages exactly as specified — JSON field names stay camelCase on the wire (map to Swift conventions via `CodingKeys` only). When decoding, ignore unknown fields rather than erroring (default `Codable` behavior — keep it; no strict validators).
-5. **Git flow:** Windows creates the shared GitHub repo at hour 0 and pushes the skeleton first. You clone it, create `glassbridge/`, and commit only inside it. Both push to `main` freely — disjoint paths mean no conflicts. (Offline fallback: your `glassbridge/` folder is copied into the repo root by USB/AirDrop; same result.)
+5. **Git flow:** the shared GitHub repo already exists — `https://github.com/jamesli07tx/Wingman-HackRice`, default branch `master`, founded by the human with the design docs in it. Windows pushes the monorepo skeleton first; you clone, create `glassbridge/`, and commit only inside it. Both push to `master` freely — disjoint paths mean no conflicts. (Offline fallback: your `glassbridge/` folder is copied into the repo root by USB/AirDrop; same result.)
 6. **Integration-day sequence** (human-driven, ~15 min): ① Windows side deploys Cortex → human gets the `wss://…fly.dev` URL. ② Human sets it in `glassbridge/Config.local.xcconfig`, rebuilds onto the phone. ③ Dashboard shows the 6-digit link code → typed into GlassBridge → `/api/devices/claim`. ④ Start from either end → M2 checks (DESIGN.md §6).
+7. **Cross-machine integration comments are mandatory.** Beyond DESIGN.md §7's per-module `// INTEGRATION:` blocks, every point where your code touches the cross-machine seam carries a greppable block in this exact format:
+   ```
+   // INTEGRATION(X-MACHINE):
+   // COUNTERPART: <file/component on the other machine that connects here>
+   // CONTRACT: DESIGN.md §<ref> — <message/endpoint name>
+   // AT-INTEGRATION: <the exact action or check for integration day — fill this value / run this check / nothing, wired automatically>
+   ```
+   Anything deliberately deferred to integration day is additionally marked `INTEGRATION-DAY: <exact action>` at the deferred line. The integration agent (or human) works from `grep -rn "INTEGRATION"` output plus the three design docs and nothing else — write every block so that is sufficient. Each machine doc lists its required comment sites; missing sites are a build defect, not a style issue.
 
 ---
 
@@ -53,6 +61,17 @@ Exactly one product: **GlassBridge**, the Swift iOS app of DESIGN.md §5.1 — a
 - **Config split:** `Config.xcconfig` (committed, placeholder URLs + `DEV_HARNESS_URL = ws://localhost:8787`) and `Config.local.xcconfig` (gitignored, real Fly URLs at integration); `Config.swift` reads them from Info.plist-injected build settings.
 - **Agent build workflow:** compile-check with `xcodebuild -scheme Wingman -destination 'generic/platform=iOS' build` (or `-destination 'platform=iOS Simulator,name=iPhone 16'` for runnable checks); run tests with `xcodebuild test -scheme Wingman -destination 'platform=iOS Simulator,...'`. Deploys to the physical phone go through Xcode's Run button or `xcrun devicectl device install app` — expect the human's finger for the first-install trust prompt (Settings → General → VPN & Device Management → trust the developer) and for any DAT pairing dialogs. Guard all DAT calls behind a hardware check so the app **runs simulator-degraded** (StatusView + CortexSocket + FrameSampler-from-a-test-image work in the Simulator; only real streaming/rendering needs glasses).
 - **Phone/glasses prerequisites (surface as a checklist for the human — you cannot do these):** iPhone Developer Mode on (one reboot) · phone trusts the Mac · Meta AI app v272+, signed into the same Meta account as the developer enrollment · glasses firmware v125+, paired, Developer Mode toggled in the Meta AI app · tester enrollment done.
+
+### Required `INTEGRATION(X-MACHINE)` comment sites (§0.7) — Mac
+
+| Site | COUNTERPART | AT-INTEGRATION says |
+|---|---|---|
+| `Protocol.swift` (file header) | `shared/src/protocol.ts` | nothing — header also records provenance: "transcribed from DESIGN.md §4.2, v2 frozen 2026-09-12"; never resynced from cortex source |
+| `CortexSocket.swift` — URL + token resolution | `DeviceGateway.ts` | `INTEGRATION-DAY:` swap `DEV_HARNESS_URL` for `CORTEX_WS_URL` from `Config.local.xcconfig` |
+| `Config.xcconfig` placeholders | `fly.toml` / deployed Cortex | `INTEGRATION-DAY:` human fills `Config.local.xcconfig` with the real URLs handed over from the Windows side |
+| `StatusView.swift` — link-code claim call | `/api/devices/claim` route | run once against live Cortex; token lands in Keychain; expect 404 until Windows deploys (visible, recoverable error) |
+| `FrameSampler.swift` / `HudRenderer.swift` — `armed.config` application | `SessionOrchestrator` config emission | verify received config overrides compiled defaults (log both on arm) |
+| `AudioKeepalive.swift` | none (Windows-independent) | re-run the 5-min locked-phone stream against live Cortex at M2 |
 
 ## 2. Build order & self-contained acceptance checks (none require the Windows side)
 
