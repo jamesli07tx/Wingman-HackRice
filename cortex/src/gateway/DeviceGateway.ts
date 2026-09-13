@@ -137,6 +137,8 @@ export function parseDeviceMessage(raw: string): DeviceToCortexMsg | null {
 /** One live device socket. MockDeviceAdapter is the hardware-free stand-in for this. */
 class WsDeviceChannel implements DeviceChannel {
   #deviceType: DeviceType;
+  /** Smallest (now − frame.ts) seen on this socket: clock skew + best-case transit. See the frame case. */
+  baselineAgeMs: number | null = null;
 
   constructor(
     readonly deviceId: string,
@@ -334,10 +336,17 @@ export class DeviceGateway {
         events.onDeviceSessionStop(deviceId);
         break;
       case "frame":
-        // Stale-frame guard: a frame that queued behind a slow uplink may show a booth the wearer left.
-        if (typeof msg.ts === "number" && Date.now() - msg.ts > STALE_FRAME_MS) {
-          this.#logger.info("stale frame skipped", { deviceId, seq: msg.seq, ageMs: Date.now() - msg.ts });
-          break;
+        // Stale-frame guard, relative to this device's own best case: `ts` is the phone's wall clock, which can
+        // sit seconds off ours, and a slow uplink adds a constant transit time — an absolute cutoff dropped EVERY
+        // frame (age 10–30 s) and the gate went silent. Only a frame that is STALE_FRAME_MS older than the
+        // freshest this device has managed is skipped: that one queued behind others and shows a booth left behind.
+        if (typeof msg.ts === "number") {
+          const age = Date.now() - msg.ts;
+          channel.baselineAgeMs = channel.baselineAgeMs === null ? age : Math.min(channel.baselineAgeMs, age);
+          if (age - channel.baselineAgeMs > STALE_FRAME_MS) {
+            this.#logger.info("stale frame skipped", { deviceId, seq: msg.seq, ageMs: age, baselineMs: channel.baselineAgeMs });
+            break;
+          }
         }
         events.onFrame(deviceId, msg.seq, Buffer.from(msg.dataBase64, "base64"));
         break;
