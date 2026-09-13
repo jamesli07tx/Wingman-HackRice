@@ -32,7 +32,7 @@ struct GlassesView: View {
         Task { await bridge.linkGlassesViaAccount() }
       } label: {
         HStack(spacing: 8) {
-          if bridge.profileBusy { ProgressView().controlSize(.small).tint(.black) }
+          if bridge.profileBusy { ProgressView().controlSize(.small).tint(.white) }
           Text("Link now")
         }
       }
@@ -73,7 +73,7 @@ struct GlassesView: View {
             Task { await bridge.connectGlasses() }
           } label: {
             HStack(spacing: 8) {
-              if bridge.glassesConnecting { ProgressView().controlSize(.small).tint(.black) }
+              if bridge.glassesConnecting { ProgressView().controlSize(.small).tint(.white) }
               Text(bridge.glassesConnecting ? "Connecting…" : "Connect glasses")
             }
           }

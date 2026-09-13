@@ -41,7 +41,7 @@ struct ProfileView: View {
 
       Button { importing = true } label: {
         HStack(spacing: 8) {
-          if bridge.profileBusy { ProgressView().controlSize(.small).tint(.black) }
+          if bridge.profileBusy { ProgressView().controlSize(.small).tint(.white) }
           Text(bridge.profile == nil ? "Choose PDF" : "Replace PDF")
         }
       }
@@ -80,7 +80,7 @@ struct ProfileView: View {
   private func parsedCard(_ profile: ProfileSummary) -> some View {
     Card(title: "Profile ready", symbol: "checkmark.seal") {
       if let name = profile.name {
-        Text(name).font(.system(.title2, design: .rounded).weight(.bold)).foregroundStyle(Theme.text)
+        Text(name).font(.system(.title2).weight(.bold)).foregroundStyle(Theme.text)
       }
       if let headline = profile.headline {
         Text(headline).font(.subheadline).foregroundStyle(Theme.muted)

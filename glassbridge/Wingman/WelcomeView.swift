@@ -111,7 +111,7 @@ struct WelcomeView: View {
 
   @ViewBuilder private func busyLabel(_ title: String) -> some View {
     HStack(spacing: 8) {
-      if busy { ProgressView().controlSize(.small).tint(.black) }
+      if busy { ProgressView().controlSize(.small).tint(.white) }
       Text(busy ? "Working…" : title)
     }
   }

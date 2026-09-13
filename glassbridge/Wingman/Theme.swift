@@ -1,32 +1,59 @@
-// Theme.swift — the whole visual system, in one file: a dark navy ground, one teal accent, card
-// surfaces a shade lighter than the ground, rounded SF Pro titles, and the capsule status pills the
-// old StatusView already used. Every screen builds out of these; nothing here knows about Wingman.
+// Theme.swift — the whole visual system, in one file. Mirrors the web console in ui/ (ui/src/app/globals.css
+// + ui/src/components/ui.tsx — the Confidanz product language): #F9F9F9 page ground, white cards on a soft
+// shadow, navy ink #182849, product blue #4472C4 with pale blue #DFE7F5 for selected states, rounded-full bold
+// buttons, light mode only. Roboto is not bundled on iOS, so SF at the same weights stands in. Every screen
+// builds out of these; nothing here knows about Wingman.
 
 import SwiftUI
 
 enum Theme {
-  /// #0B1730 — the ground. Set on a ZStack under every screen, never left transparent.
-  static let bg = Color(red: 0.043, green: 0.090, blue: 0.188)
-  /// #13223E — cards, one shade up from the ground.
-  static let surface = Color(red: 0.075, green: 0.133, blue: 0.243)
-  /// #1B2D4E — chips and fields inside a card.
-  static let field = Color(red: 0.106, green: 0.176, blue: 0.306)
-  /// #06B6D4 — the one accent. Primary buttons, the tab tint, focus.
-  static let accent = Color(red: 0.024, green: 0.714, blue: 0.831)
-  static let text = Color.white
-  static let muted = Color.white.opacity(0.58)
-  static let hairline = Color.white.opacity(0.10)
-  static let danger = Color(red: 0.96, green: 0.35, blue: 0.38)
-  static let warn = Color(red: 0.98, green: 0.72, blue: 0.30)
-  static let ok = Color(red: 0.25, green: 0.85, blue: 0.60)
+  /// #F9F9F9 — the page ground (ui: --ground). Set on a ZStack under every screen, never left transparent.
+  static let bg = Color(red: 0.976, green: 0.976, blue: 0.976)
+  /// #FFFFFF — cards (ui: --panel), lifted by `Theme.shadow`.
+  static let surface = Color.white
+  /// #F3F4F6 — chips, segmented grounds, secondary hovers (ui: --panel-2).
+  static let field = Color(red: 0.953, green: 0.957, blue: 0.965)
+  /// #4472C4 — product blue: primary buttons, the tab tint, focus (ui: --accent).
+  static let accent = Color(red: 0.267, green: 0.447, blue: 0.769)
+  /// #2B5797 — pressed / hover blue (ui: --accent-strong).
+  static let accentStrong = Color(red: 0.169, green: 0.341, blue: 0.592)
+  /// #DFE7F5 — pale blue: selected pills and chips (ui: --accent-deep).
+  static let accentSoft = Color(red: 0.875, green: 0.906, blue: 0.961)
+  /// #182849 — navy ink (ui: --fg).
+  static let text = Color(red: 0.094, green: 0.157, blue: 0.286)
+  /// #6B7280 (ui: --muted).
+  static let muted = Color(red: 0.420, green: 0.447, blue: 0.502)
+  /// #E5E7EB — rules and input borders (ui: --rule).
+  static let hairline = Color(red: 0.898, green: 0.906, blue: 0.922)
+  /// #D1D5DB — input border.
+  static let inputBorder = Color(red: 0.820, green: 0.835, blue: 0.859)
+  static let danger = Color(red: 0.863, green: 0.149, blue: 0.149)      // #DC2626
+  static let dangerSoft = Color(red: 0.980, green: 0.827, blue: 0.827)  // #FAD3D3
+  static let warn = Color(red: 0.675, green: 0.604, blue: 0.0)          // #AC9A00
+  static let warnSoft = Color(red: 1.0, green: 0.996, blue: 0.863)      // #FFFEDC
+  static let ok = Color(red: 0.196, green: 0.396, blue: 0.204)          // #326534
+  static let okSoft = Color(red: 0.839, green: 0.929, blue: 0.843)      // #D6EDD7
+  /// The dark bezel every lens replica sits in (ui/src/components/HudCardView.tsx #1B2026).
+  static let bezel = Color(red: 0.106, green: 0.125, blue: 0.149)
 
-  static let title = Font.system(.largeTitle, design: .rounded).weight(.bold)
-  static let section = Font.system(.title3, design: .rounded).weight(.semibold)
+  static let title = Font.system(.largeTitle).weight(.bold)
+  static let section = Font.system(.title3).weight(.bold)
+}
+
+extension View {
+  /// ui --shadow-2: the card elevation.
+  func cardShadow() -> some View {
+    self.shadow(color: .black.opacity(0.10), radius: 15, y: 10).shadow(color: .black.opacity(0.10), radius: 6, y: 4)
+  }
+  /// ui --shadow-1: chrome (the top bar).
+  func chromeShadow() -> some View {
+    self.shadow(color: .black.opacity(0.10), radius: 6, y: 4)
+  }
 }
 
 // MARK: - Building blocks
 
-/// A card: rounded navy surface, optional SF Symbol + title.
+/// A card: white on a soft shadow, bold navy title with an optional blue SF Symbol (ui Section).
 struct Card<Content: View>: View {
   var title: String?
   var symbol: String?
@@ -43,13 +70,13 @@ struct Card<Content: View>: View {
       content
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(16)
-    .background(RoundedRectangle(cornerRadius: 18).fill(Theme.surface))
-    .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.hairline))
+    .padding(20)
+    .background(RoundedRectangle(cornerRadius: 8).fill(Theme.surface))
+    .cardShadow()
   }
 }
 
-/// The capsule status pill carried over from the old StatusView: a coloured dot plus one short label.
+/// Status pill (ui Chip): pale capsule, navy text, a coloured dot for the state.
 struct Pill: View {
   let text: String
   var color: Color = Theme.muted
@@ -62,28 +89,29 @@ struct Pill: View {
   var body: some View {
     HStack(spacing: 6) {
       Circle().fill(color).frame(width: 8, height: 8)
-      Text(text).font(.caption).lineLimit(1).foregroundStyle(Theme.text.opacity(0.9))
+      Text(text).font(.caption.weight(.medium)).lineLimit(1).foregroundStyle(Theme.text)
     }
-    .padding(.horizontal, 10)
+    .padding(.horizontal, 12)
     .padding(.vertical, 5)
     .background(Capsule().fill(Theme.field))
   }
 }
 
-/// A read-only chip — skills, interests.
+/// A read-only chip — skills, interests (ui Chip tone "accent": pale blue, navy text).
 struct Chip: View {
   let text: String
 
   var body: some View {
     Text(text)
       .font(.caption.weight(.medium))
-      .foregroundStyle(Theme.accent)
-      .padding(.horizontal, 10)
+      .foregroundStyle(Theme.text)
+      .padding(.horizontal, 12)
       .padding(.vertical, 6)
-      .background(Capsule().fill(Theme.accent.opacity(0.14)))
+      .background(Capsule().fill(Theme.accentSoft))
   }
 }
 
+/// ui Button primary: rounded-full, bold, product blue, white text; darker while pressed.
 struct PrimaryButtonStyle: ButtonStyle {
   /// `.tint` does not reach a custom ButtonStyle, so the one destructive button passes its colour here.
   var color: Color = Theme.accent
@@ -92,64 +120,77 @@ struct PrimaryButtonStyle: ButtonStyle {
 
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.body.weight(.semibold))
-      .foregroundStyle(isEnabled ? Color.black.opacity(0.88) : Theme.muted)
+      .font(.body.weight(.bold))
+      .foregroundStyle(.white)
       .frame(maxWidth: .infinity)
       .padding(.vertical, 14)
-      .background(Capsule().fill(isEnabled ? color : Theme.field))
-      .opacity(configuration.isPressed ? 0.75 : 1)
+      .background(Capsule().fill(configuration.isPressed ? color.opacity(0.85) : color))
+      .opacity(isEnabled ? 1 : 0.7)
+      .scaleEffect(configuration.isPressed ? 0.97 : 1)
+      .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
   }
 }
 
+/// ui Button secondary: transparent with a 1 px inset ring, dark text.
 struct GhostButtonStyle: ButtonStyle {
   @Environment(\.isEnabled) private var isEnabled
 
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.body.weight(.medium))
-      .foregroundStyle(isEnabled ? Theme.text : Theme.muted)
+      .font(.body.weight(.bold))
+      .foregroundStyle(isEnabled ? Color(red: 0.2, green: 0.2, blue: 0.2) : Theme.muted)
       .frame(maxWidth: .infinity)
       .padding(.vertical, 12)
-      .background(Capsule().fill(Theme.field))
-      .opacity(configuration.isPressed ? 0.75 : 1)
+      .background(Capsule().fill(configuration.isPressed ? Theme.field : Color.clear))
+      .overlay(Capsule().strokeBorder(Color.black.opacity(0.15)))
+      .scaleEffect(configuration.isPressed ? 0.97 : 1)
+      .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
   }
 }
 
 extension View {
-  /// Text fields, consistently: navy pill, teal caret, white text.
+  /// Text fields, consistently (ui Input): white, 1 px grey border, rounded 8, navy text, blue caret.
   func wingmanField() -> some View {
     self
       .foregroundStyle(Theme.text)
       .tint(Theme.accent)
       .padding(.horizontal, 14)
-      .padding(.vertical, 12)
-      .background(RoundedRectangle(cornerRadius: 12).fill(Theme.field))
-      .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.hairline))
+      .padding(.vertical, 11)
+      .background(RoundedRectangle(cornerRadius: 8).fill(Color.white))
+      .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.inputBorder))
   }
 }
 
-/// Red for "you must act", amber for "I am handling it", grey for "here is the next step".
+/// ui Notice: soft tinted block — red for "you must act", amber for "I am handling it", grey for "here is the next step".
 struct Banner: View {
   enum Kind { case error, warning, note }
 
   let text: String
   var kind: Kind = .note
 
-  private var color: Color {
+  private var ink: Color {
     switch kind {
     case .error: return Theme.danger
-    case .warning: return Theme.warn
-    case .note: return Theme.muted
+    case .warning: return Color(red: 0.478, green: 0.427, blue: 0.0)   // #7A6D00
+    case .note: return Color(red: 0.294, green: 0.333, blue: 0.388)    // #4B5563
+    }
+  }
+  private var ground: Color {
+    switch kind {
+    case .error: return Theme.dangerSoft
+    case .warning: return Theme.warnSoft
+    case .note: return Theme.field
     }
   }
 
   var body: some View {
     Text(text)
       .font(.footnote)
-      .foregroundStyle(kind == .note ? Theme.muted : color)
+      .foregroundStyle(ink)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(10)
-      .background(RoundedRectangle(cornerRadius: 10).fill(color.opacity(kind == .note ? 0.06 : 0.14)))
+      .padding(.horizontal, 14)
+      .padding(.vertical, 10)
+      .background(RoundedRectangle(cornerRadius: 8).fill(ground))
   }
 }
 
@@ -172,13 +213,13 @@ struct Stat: View {
   }
 }
 
-/// The wordmark: "Wing" in white, "man" in teal, rounded and tight.
+/// The wordmark, same as the console's NavBar: a product-blue diamond, then "Wingman" in bold navy.
 struct Wordmark: View {
   var size: Font = Theme.title
 
   var body: some View {
-    (Text("Wing").foregroundColor(Theme.text) + Text("man").foregroundColor(Theme.accent))
+    (Text("◆ ").foregroundColor(Theme.accent) + Text("Wingman").foregroundColor(Theme.text))
       .font(size)
-      .kerning(-0.5)
+      .kerning(-0.3)
   }
 }

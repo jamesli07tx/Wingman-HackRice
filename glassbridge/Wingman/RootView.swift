@@ -31,7 +31,7 @@ struct RootView: View {
         signedIn
       }
     }
-    .preferredColorScheme(.dark)
+    .preferredColorScheme(.light)
   }
 
   private var signedIn: some View {
@@ -61,7 +61,7 @@ struct RootView: View {
 
   private var topBar: some View {
     HStack(spacing: 10) {
-      Wordmark(size: .system(.title3, design: .rounded).weight(.bold))
+      Wordmark(size: .system(.title3).weight(.bold))
       Spacer(minLength: 8)
       Pill(linkLabel, linkColor)
       Menu {
@@ -80,8 +80,9 @@ struct RootView: View {
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 10)
-    .background(Theme.bg)
-    .overlay(alignment: .bottom) { Rectangle().fill(Theme.hairline).frame(height: 1) }
+    .background(Theme.surface)
+    .chromeShadow()
+    .zIndex(1)
   }
 
   private var linkLabel: String {

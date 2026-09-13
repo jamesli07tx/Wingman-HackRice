@@ -67,9 +67,11 @@ struct SessionView: View {
   private func lensCard(_ raw: HudCard) -> some View {
     let card = HudText.fit(raw)
     return Card(title: "On the lens", symbol: "eye") {
-      RoundedRectangle(cornerRadius: 14)
+      RoundedRectangle(cornerRadius: 18)
         .fill(Color.black)
         .aspectRatio(1, contentMode: .fit)     // the lens canvas is square (DESIGN.md §4.2 renderer contract)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 26).fill(Theme.bezel))   // device screen in a bezel (ui HudCardView)
         .overlay(alignment: .topLeading) {
           VStack(alignment: .leading, spacing: 6) {
             Text(card.title)
@@ -92,7 +94,6 @@ struct SessionView: View {
           }
           .padding(14)
         }
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.accent.opacity(0.30)))
 
       Text("\(card.kind.rawValue) · seq \(card.seq) · live mirror of the glasses").font(.caption2).foregroundStyle(Theme.muted)
     }

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 100" width="420" height="100">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4472C4"/><stop offset="1" stop-color="#2B5797"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(0 0)">
+    <rect x="17" y="17" width="66" height="66" rx="14" transform="rotate(45 50 50)" fill="url(#g)"/>
+    <rect x="35" y="35" width="30" height="30" rx="6" transform="rotate(45 50 50)" fill="#FFFFFF"/>
+    <rect x="44" y="44" width="12" height="12" rx="2.5" transform="rotate(45 50 50)" fill="#4472C4"/>
+  </g>
+  <text x="112" y="68" font-family="Roboto, system-ui, sans-serif" font-weight="700" font-size="52" fill="#182849" letter-spacing="-1">Wingman</text>
+</svg>

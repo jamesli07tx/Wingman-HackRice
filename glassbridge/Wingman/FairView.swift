@@ -81,7 +81,7 @@ struct FairView: View {
         Task { await bridge.startFairImport(link: link.trimmingCharacters(in: .whitespacesAndNewlines), fairName: fairName) }
       } label: {
         HStack(spacing: 8) {
-          if bridge.fairBusy { ProgressView().controlSize(.small).tint(.black) }
+          if bridge.fairBusy { ProgressView().controlSize(.small).tint(.white) }
           Text("Import from link")
         }
       }
@@ -205,7 +205,7 @@ struct BriefEditor: View {
               }
             } label: {
               HStack(spacing: 8) {
-                if bridge.briefBusy { ProgressView().controlSize(.small).tint(.black) }
+                if bridge.briefBusy { ProgressView().controlSize(.small).tint(.white) }
                 Text("Save my brief")
               }
             }
