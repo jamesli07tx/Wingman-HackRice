@@ -85,21 +85,38 @@ async function wireFullStack(): Promise<void> {
   const hub = new DashboardHub({ verifyToken, logger: log });
   log.info("gate model", { model: gateModel() });
 
-  // Identify corpus snapshot (boot-time; re-run `corpus ingest/enrich` + restart to refresh).
-  const { data: corpusRows, error: corpusErr } = await supabase
-    .from("companies")
-    .select("company_id,name,aliases");
-  if (corpusErr) app.log.warn({ err: corpusErr }, "corpus load failed — identify list is EMPTY");
-  const corpus: IdentifyCorpusEntry[] = (corpusRows ?? []).map(
-    (r: { company_id: string; name: string; aliases: string[] | null }) => ({
-      companyId: r.company_id,
-      name: r.name,
-      aliases: r.aliases ?? [],
-    }),
-  );
-  app.log.info({ companies: corpus.length }, "identify corpus loaded");
+  // Identify corpus: loaded with retries (a Supabase gateway timeout at boot used to leave identify
+  // EMPTY for the whole process lifetime) and refreshed every 5 min. The corpus is a lookup cache only —
+  // anything not in it is researched live (ContextService); live results are NOT written back.
+  type CorpusRow = { company_id: string; name: string; aliases: string[] | null };
+  const loadCorpus = async (): Promise<IdentifyCorpusEntry[] | null> => {
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      const { data, error } = await supabase.from("companies").select("company_id,name,aliases");
+      if (!error) {
+        return ((data ?? []) as CorpusRow[]).map((r) => ({ companyId: r.company_id, name: r.name, aliases: r.aliases ?? [] }));
+      }
+      app.log.warn({ err: error, attempt }, "corpus load failed");
+      await new Promise((r) => setTimeout(r, 1000 * 2 ** (attempt - 1)));
+    }
+    return null;
+  };
+  let corpus: IdentifyCorpusEntry[] = (await loadCorpus()) ?? [];
+  app.log.info({ companies: corpus.length }, corpus.length ? "identify corpus loaded" : "identify corpus EMPTY — will retry in background");
 
-  const identifier = new IdentifyService(corpus);
+  // Swappable identifier: IdentifyService bakes the corpus into its (cache-stable) system prompt at
+  // construction, so a refresh builds a new instance and the proxy forwards to the current one.
+  let identifierImpl = new IdentifyService(corpus);
+  const identifier: Pick<IdentifyService, "identify"> = { identify: (jpeg) => identifierImpl.identify(jpeg) };
+  const refreshCorpus = async () => {
+    const fresh = await loadCorpus();
+    if (!fresh) return;
+    const same = fresh.length === corpus.length && fresh.every((e, i) => e.companyId === corpus[i]?.companyId);
+    if (same && corpus.length) return;
+    corpus = fresh;
+    identifierImpl = new IdentifyService(corpus);
+    app.log.info({ companies: corpus.length }, "identify corpus refreshed");
+  };
+  setInterval(() => { void refreshCorpus(); }, corpus.length ? 5 * 60_000 : 30_000).unref();
   const context = new ContextService(supabase, fetch, makeOpusSummarizer(), {
     tavilyApiKey: process.env.TAVILY_API_KEY,
   });

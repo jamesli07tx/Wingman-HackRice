@@ -71,6 +71,8 @@ export type FetchLike = (
 export interface ContextServiceOptions {
   /** defaults to process.env.TAVILY_API_KEY */
   tavilyApiKey?: string;
+  /** write live-searched companies back into the corpus (default false — research every time) */
+  cacheLiveResults?: boolean;
   /** Appendix D T_SEARCH_MS */
   searchTimeoutMs?: number;
   tavilyUrl?: string;
@@ -134,6 +136,7 @@ export function slugify(name: string): string {
 export class ContextService implements ContextProvider {
   private readonly searchTimeoutMs: number;
   private readonly tavilyUrl: string;
+  private readonly cacheLiveResults: boolean;
 
   constructor(
     private readonly supabase: SupabaseClient,
@@ -143,6 +146,7 @@ export class ContextService implements ContextProvider {
   ) {
     this.searchTimeoutMs = opts.searchTimeoutMs ?? T_SEARCH_MS;
     this.tavilyUrl = opts.tavilyUrl ?? TAVILY_URL;
+    this.cacheLiveResults = opts.cacheLiveResults ?? false;
   }
 
   async resolve(input: {
@@ -249,9 +253,10 @@ export class ContextService implements ContextProvider {
       };
     }
 
-    // Cache back so the next look at this booth takes the instant path.
+    // Write-back to the corpus is OFF by default (human's call, 2026-09-13): the corpus is a curated
+    // lookup cache; live-searched companies are researched again each time rather than cached.
     // A write failure must never cost us the card we already have.
-    try {
+    if (this.cacheLiveResults) try {
       await this.supabase.from("companies").upsert(
         {
           company_id: record.companyId,
