@@ -282,7 +282,14 @@ async function main(): Promise<void> {
   let done = 0;
   const failures: string[] = [];
 
-  for (const [index, company] of todo.entries()) {
+  // ponytail: a fixed pool of CONCURRENCY workers over a shared cursor — no queue library. Each worker keeps
+  // the per-call gap, so the aggregate rate is CONCURRENCY× the old sequential run (raise/lower via env).
+  const CONCURRENCY = Math.max(1, Number(process.env.ENRICH_CONCURRENCY ?? 4));
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+   while (cursor < todo.length) {
+    const index = cursor++;
+    const company = todo[index]!;
     const label = `${index + 1}/${todo.length} ${company.company_id}`;
     console.log(`[corpus/enrich] ${label} — ${company.name}`);
     try {
@@ -313,8 +320,10 @@ async function main(): Promise<void> {
       failures.push(company.company_id);
     }
 
-    if (index < todo.length - 1) await sleep(RATE_LIMIT_GAP_MS);
-  }
+    if (cursor < todo.length) await sleep(RATE_LIMIT_GAP_MS);
+   }
+  };
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));
 
   console.log(`[corpus/enrich] enriched ${done}/${todo.length}`);
   if (failures.length > 0) {

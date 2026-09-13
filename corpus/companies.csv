@@ -52,3 +52,223 @@ oxy,Occidental Petroleum,Oxy|Occidental|OXY,marquee,https://www.oxy.com/careers/
 slb,SLB,Schlumberger|SLB Limited,marquee,https://careers.slb.com/
 halliburton,Halliburton,Halliburton Company|HAL,marquee,https://jobs.halliburton.com/
 hudson-river-trading,Hudson River Trading,HRT|Hudson River Trading LLC|hudson river trading,marquee,https://www.hudsonrivertrading.com/careers/
+#
+# --- Expanded corpus (2026-09-13): ~200 employers a Rice / Houston career fair actually draws ---
+# Big tech & consumer
+netflix,Netflix,Netflix Inc,marquee,https://jobs.netflix.com/
+salesforce,Salesforce,Salesforce Inc|SFDC,marquee,https://careers.salesforce.com/en/
+adobe,Adobe,Adobe Inc|Adobe Systems,marquee,https://careers.adobe.com/us/en
+oracle,Oracle,Oracle Corporation|OCI,marquee,https://www.oracle.com/careers/
+ibm,IBM,International Business Machines,marquee,https://www.ibm.com/careers/
+intel,Intel,Intel Corporation,marquee,https://jobs.intel.com/
+amd,AMD,Advanced Micro Devices,marquee,https://careers.amd.com/
+qualcomm,Qualcomm,Qualcomm Incorporated,marquee,https://careers.qualcomm.com/careers
+cisco,Cisco,Cisco Systems,marquee,https://jobs.cisco.com/
+uber,Uber,Uber Technologies,marquee,https://www.uber.com/us/en/careers/
+lyft,Lyft,Lyft Inc,marquee,https://www.lyft.com/careers
+airbnb,Airbnb,Airbnb Inc,marquee,https://careers.airbnb.com/
+doordash,DoorDash,DoorDash Inc,marquee,https://careers.doordash.com/
+instacart,Instacart,Maplebear Inc,marquee,https://instacart.careers/
+pinterest,Pinterest,Pinterest Inc,marquee,https://www.pinterestcareers.com/
+snap,Snap,Snap Inc|Snapchat,marquee,https://careers.snap.com/
+reddit,Reddit,Reddit Inc,marquee,https://redditinc.com/careers
+linkedin,LinkedIn,LinkedIn Corporation,marquee,https://careers.linkedin.com/
+tiktok,TikTok,ByteDance|TikTok Inc,marquee,https://careers.tiktok.com/
+x,X,X Corp|Twitter,marquee,https://careers.x.com/
+spotify,Spotify,Spotify Technology,marquee,https://www.lifeatspotify.com/
+dropbox,Dropbox,Dropbox Inc,marquee,https://jobs.dropbox.com/
+zoom,Zoom,Zoom Video Communications,marquee,https://careers.zoom.us/
+slack,Slack,Slack Technologies,marquee,https://slack.com/careers
+atlassian,Atlassian,Atlassian Corporation|Jira|Confluence,marquee,https://www.atlassian.com/company/careers
+shopify,Shopify,Shopify Inc,marquee,https://www.shopify.com/careers
+square,Block,Square|Block Inc|Cash App,marquee,https://block.xyz/careers
+paypal,PayPal,PayPal Holdings|Venmo,marquee,https://www.paypal.com/us/webapps/mpp/jobs
+intuit,Intuit,Intuit Inc|TurboTax|QuickBooks,marquee,https://www.intuit.com/careers/
+servicenow,ServiceNow,ServiceNow Inc,marquee,https://careers.servicenow.com/
+workday,Workday,Workday Inc,marquee,https://www.workday.com/en-us/company/careers.html
+vmware,VMware,VMware by Broadcom|Broadcom,marquee,https://www.broadcom.com/company/careers
+snowflake,Snowflake,Snowflake Inc,marquee,https://careers.snowflake.com/
+mongodb,MongoDB,MongoDB Inc,marquee,https://www.mongodb.com/company/careers
+twilio,Twilio,Twilio Inc,marquee,https://www.twilio.com/en-us/company/jobs
+hubspot,HubSpot,HubSpot Inc,marquee,https://www.hubspot.com/careers
+okta,Okta,Okta Inc,marquee,https://www.okta.com/company/careers/
+crowdstrike,CrowdStrike,CrowdStrike Holdings,marquee,https://www.crowdstrike.com/careers/
+paloaltonetworks,Palo Alto Networks,PANW,marquee,https://jobs.paloaltonetworks.com/
+splunk,Splunk,Splunk Inc,marquee,https://www.splunk.com/en_us/careers.html
+github,GitHub,GitHub Inc,marquee,https://github.com/about/careers
+gitlab,GitLab,GitLab Inc,marquee,https://about.gitlab.com/jobs/
+vercel,Vercel,Vercel Inc|Next.js,marquee,https://vercel.com/careers
+notion,Notion,Notion Labs,marquee,https://www.notion.com/careers
+canva,Canva,Canva Pty,marquee,https://www.canva.com/careers/
+roblox,Roblox,Roblox Corporation,marquee,https://careers.roblox.com/
+unity,Unity,Unity Technologies,marquee,https://careers.unity.com/
+epicgames,Epic Games,Epic|Unreal Engine|Fortnite,marquee,https://www.epicgames.com/site/en-US/careers
+ea,Electronic Arts,EA|EA Games,marquee,https://www.ea.com/careers
+activision,Activision Blizzard,Activision|Blizzard,marquee,https://careers.activisionblizzard.com/
+# AI & infra startups
+cursor,Cursor,Anysphere|Cursor AI,marquee,https://cursor.com/careers
+scaleai,Scale AI,Scale,marquee,https://scale.com/careers
+huggingface,Hugging Face,HuggingFace,marquee,https://huggingface.co/jobs
+cohere,Cohere,Cohere Inc,marquee,https://cohere.com/careers
+mistral,Mistral AI,Mistral,marquee,https://mistral.ai/careers
+perplexity,Perplexity,Perplexity AI,marquee,https://www.perplexity.ai/hub/careers
+xai,xAI,x.AI|Grok,marquee,https://x.ai/careers
+deepmind,Google DeepMind,DeepMind,marquee,https://deepmind.google/about/careers/
+cerebras,Cerebras,Cerebras Systems,marquee,https://www.cerebras.ai/careers
+groq,Groq,Groq Inc,marquee,https://groq.com/careers/
+coreweave,CoreWeave,CoreWeave Inc,marquee,https://www.coreweave.com/careers
+lambda,Lambda,Lambda Labs,marquee,https://lambda.ai/careers
+together,Together AI,Together,marquee,https://www.together.ai/careers
+replit,Replit,Replit Inc,marquee,https://replit.com/careers
+supabase,Supabase,Supabase Inc,marquee,https://supabase.com/careers
+retool,Retool,Retool Inc,marquee,https://retool.com/careers
+brex,Brex,Brex Inc,marquee,https://www.brex.com/careers
+plaid,Plaid,Plaid Inc,marquee,https://plaid.com/careers/
+rippling,Rippling,Rippling Inc,marquee,https://www.rippling.com/careers
+deel,Deel,Deel Inc,marquee,https://www.deel.com/careers/
+gusto,Gusto,Gusto Inc,marquee,https://gusto.com/about/careers
+robinhood,Robinhood,Robinhood Markets,marquee,https://careers.robinhood.com/
+coinbase,Coinbase,Coinbase Global,marquee,https://www.coinbase.com/careers
+affirm,Affirm,Affirm Inc,marquee,https://www.affirm.com/careers
+chime,Chime,Chime Financial,marquee,https://www.chime.com/careers/
+anduril,Anduril,Anduril Industries,marquee,https://www.anduril.com/careers/
+shield-ai,Shield AI,ShieldAI,marquee,https://shield.ai/careers/
+samsara,Samsara,Samsara Inc,marquee,https://www.samsara.com/company/careers
+verkada,Verkada,Verkada Inc,marquee,https://www.verkada.com/careers/
+flexport,Flexport,Flexport Inc,marquee,https://www.flexport.com/careers/
+# Quant & finance
+two-sigma,Two Sigma,Two Sigma Investments,marquee,https://www.twosigma.com/careers/
+de-shaw,D. E. Shaw,DE Shaw|D.E. Shaw & Co,marquee,https://www.deshaw.com/careers
+optiver,Optiver,Optiver US,marquee,https://optiver.com/working-at-optiver/
+imc,IMC Trading,IMC,marquee,https://www.imc.com/us/careers
+sig,Susquehanna,SIG|Susquehanna International Group,marquee,https://careers.sig.com/
+akuna,Akuna Capital,Akuna,marquee,https://akunacapital.com/careers
+drw,DRW,DRW Trading,marquee,https://www.drw.com/work-at-drw
+five-rings,Five Rings,Five Rings Capital,marquee,https://fiverings.com/careers/
+millennium,Millennium,Millennium Management,marquee,https://www.mlp.com/careers/
+point72,Point72,Point72 Asset Management|Cubist,marquee,https://careers.point72.com/
+bridgewater,Bridgewater,Bridgewater Associates,marquee,https://www.bridgewater.com/working-at-bridgewater
+aqr,AQR,AQR Capital Management,marquee,https://www.aqr.com/About-Us/Careers
+virtu,Virtu Financial,Virtu,marquee,https://www.virtu.com/careers/
+tower-research,Tower Research Capital,Tower Research,marquee,https://www.tower-research.com/open-positions/
+jump-trading,Jump Trading,Jump,marquee,https://www.jumptrading.com/careers/
+morganstanley,Morgan Stanley,MS,marquee,https://www.morganstanley.com/careers
+bankofamerica,Bank of America,BofA|Bank of America Merrill Lynch,marquee,https://careers.bankofamerica.com/
+citi,Citi,Citigroup|Citibank,marquee,https://jobs.citi.com/
+wellsfargo,Wells Fargo,Wells Fargo & Company,marquee,https://www.wellsfargojobs.com/
+blackrock,BlackRock,BlackRock Inc|Aladdin,marquee,https://careers.blackrock.com/
+vanguard,Vanguard,The Vanguard Group,marquee,https://www.vanguardjobs.com/
+fidelity,Fidelity,Fidelity Investments,marquee,https://jobs.fidelity.com/
+schwab,Charles Schwab,Schwab,marquee,https://www.schwabjobs.com/
+americanexpress,American Express,Amex,marquee,https://www.americanexpress.com/en-us/careers/
+visa,Visa,Visa Inc,marquee,https://corporate.visa.com/en/careers.html
+mastercard,Mastercard,Mastercard Inc,marquee,https://careers.mastercard.com/
+usaa,USAA,United Services Automobile Association,marquee,https://www.usaajobs.com/
+# Consulting & professional services
+mckinsey,McKinsey,McKinsey & Company,marquee,https://www.mckinsey.com/careers
+bcg,BCG,Boston Consulting Group,marquee,https://careers.bcg.com/
+bain,Bain,Bain & Company,marquee,https://www.bain.com/careers/
+deloitte,Deloitte,Deloitte Consulting,marquee,https://www2.deloitte.com/us/en/careers.html
+accenture,Accenture,Accenture plc,marquee,https://www.accenture.com/us-en/careers
+pwc,PwC,PricewaterhouseCoopers,marquee,https://www.pwc.com/us/en/careers.html
+ey,EY,Ernst & Young,marquee,https://www.ey.com/en_us/careers
+kpmg,KPMG,KPMG LLP,marquee,https://www.kpmguscareers.com/
+boozallen,Booz Allen Hamilton,Booz Allen,marquee,https://careers.boozallen.com/
+# Aerospace & defense
+boeing,Boeing,The Boeing Company,marquee,https://jobs.boeing.com/
+lockheedmartin,Lockheed Martin,Lockheed|LMT,marquee,https://www.lockheedmartinjobs.com/
+northropgrumman,Northrop Grumman,Northrop|NOC,marquee,https://www.northropgrumman.com/careers
+raytheon,RTX,Raytheon|Raytheon Technologies|Collins Aerospace|Pratt & Whitney,marquee,https://careers.rtx.com/
+generaldynamics,General Dynamics,GD|GDIT,marquee,https://www.gd.com/careers
+l3harris,L3Harris,L3Harris Technologies,marquee,https://careers.l3harris.com/
+bluorigin,Blue Origin,Blue Origin LLC,marquee,https://www.blueorigin.com/careers
+rocketlab,Rocket Lab,Rocket Lab USA,marquee,https://www.rocketlabusa.com/careers/
+axiom,Axiom Space,Axiom,marquee,https://www.axiomspace.com/careers
+intuitive-machines,Intuitive Machines,IM,marquee,https://www.intuitivemachines.com/careers
+jpl,NASA JPL,Jet Propulsion Laboratory|JPL,marquee,https://www.jpl.jobs/
+sandia,Sandia National Laboratories,Sandia|Sandia Labs,marquee,https://www.sandia.gov/careers/
+lanl,Los Alamos National Laboratory,LANL|Los Alamos,marquee,https://lanl.jobs/
+llnl,Lawrence Livermore National Laboratory,LLNL|Livermore,marquee,https://www.llnl.gov/join-our-team/careers
+mitll,MIT Lincoln Laboratory,Lincoln Lab|MIT LL,marquee,https://www.ll.mit.edu/careers
+apl,Johns Hopkins APL,JHU APL|Applied Physics Laboratory,marquee,https://www.jhuapl.edu/careers
+# Energy & Houston industry
+conocophillips,ConocoPhillips,COP,marquee,https://careers.conocophillips.com/
+bp,bp,BP plc|British Petroleum,marquee,https://www.bp.com/en/global/corporate/careers.html
+phillips66,Phillips 66,P66,marquee,https://www.phillips66.com/careers/
+bakerhughes,Baker Hughes,BKR,marquee,https://careers.bakerhughes.com/
+kindermorgan,Kinder Morgan,KMI,marquee,https://www.kindermorgan.com/Careers
+enterprise-products,Enterprise Products,Enterprise Products Partners|EPD,marquee,https://www.enterpriseproducts.com/careers
+cheniere,Cheniere,Cheniere Energy,marquee,https://www.cheniere.com/careers
+nrg,NRG Energy,NRG,marquee,https://www.nrg.com/careers.html
+centerpoint,CenterPoint Energy,CenterPoint,marquee,https://www.centerpointenergy.com/en-us/corporate/about-us/careers
+eog,EOG Resources,EOG,marquee,https://www.eogresources.com/careers/
+marathon-petroleum,Marathon Petroleum,MPC,marquee,https://www.marathonpetroleum.com/Careers/
+valero,Valero,Valero Energy,marquee,https://www.valero.com/careers
+lyondellbasell,LyondellBasell,Lyondell|LYB,marquee,https://www.lyondellbasell.com/en/careers/
+dow,Dow,Dow Inc|Dow Chemical,marquee,https://corporate.dow.com/en-us/careers.html
+honeywell,Honeywell,Honeywell International,marquee,https://careers.honeywell.com/
+ge-vernova,GE Vernova,GE|General Electric,marquee,https://www.gevernova.com/careers
+siemens,Siemens,Siemens AG|Siemens Energy,marquee,https://www.siemens.com/global/en/company/jobs.html
+schneider,Schneider Electric,Schneider,marquee,https://www.se.com/us/en/about-us/careers/
+tesla-energy,Tesla Energy,Tesla Energy|Megapack,marquee,https://www.tesla.com/careers
+kbr,KBR,KBR Inc,marquee,https://careers.kbr.com/
+fluor,Fluor,Fluor Corporation,marquee,https://www.fluor.com/careers
+bechtel,Bechtel,Bechtel Corporation,marquee,https://www.bechtel.com/careers/
+jacobs,Jacobs,Jacobs Engineering,marquee,https://www.jacobs.com/careers
+aecom,AECOM,AECOM Technology,marquee,https://aecom.jobs/
+# Healthcare & Texas Medical Center
+mdanderson,MD Anderson,MD Anderson Cancer Center|UT MD Anderson,marquee,https://careers.mdanderson.org/
+houstonmethodist,Houston Methodist,Methodist Hospital,marquee,https://jobs.houstonmethodist.org/
+texaschildrens,Texas Children's Hospital,Texas Children's,marquee,https://www.texaschildrenspeople.org/
+memorialhermann,Memorial Hermann,Memorial Hermann Health System,marquee,https://jobs.memorialhermann.org/
+bcm,Baylor College of Medicine,BCM|Baylor Medicine,marquee,https://www.bcm.edu/careers
+epic,Epic Systems,Epic|Epic EHR,marquee,https://careers.epic.com/
+medtronic,Medtronic,Medtronic plc,marquee,https://jobs.medtronic.com/
+jnj,Johnson & Johnson,J&J|Janssen,marquee,https://www.careers.jnj.com/
+pfizer,Pfizer,Pfizer Inc,marquee,https://www.pfizer.com/about/careers
+abbott,Abbott,Abbott Laboratories,marquee,https://www.abbott.com/careers.html
+stryker,Stryker,Stryker Corporation,marquee,https://careers.stryker.com/
+unitedhealth,UnitedHealth Group,UHG|Optum|UnitedHealthcare,marquee,https://careers.unitedhealthgroup.com/
+cvs,CVS Health,CVS|Aetna,marquee,https://jobs.cvshealth.com/
+# Retail, logistics, industrial
+walmart,Walmart,Walmart Global Tech|Sam's Club,marquee,https://careers.walmart.com/
+target,Target,Target Corporation,marquee,https://corporate.target.com/careers
+costco,Costco,Costco Wholesale,marquee,https://www.costco.com/jobs.html
+heb,H-E-B,HEB|H-E-B Digital,marquee,https://careers.heb.com/
+homedepot,The Home Depot,Home Depot,marquee,https://careers.homedepot.com/
+fedex,FedEx,Federal Express,marquee,https://careers.fedex.com/
+ups,UPS,United Parcel Service,marquee,https://www.jobs-ups.com/
+southwest,Southwest Airlines,Southwest,marquee,https://careers.southwestair.com/
+united,United Airlines,United,marquee,https://careers.united.com/
+americanairlines,American Airlines,AA,marquee,https://jobs.aa.com/
+ford,Ford,Ford Motor Company,marquee,https://corporate.ford.com/careers.html
+gm,General Motors,GM|Cruise,marquee,https://www.gm.com/careers
+toyota,Toyota,Toyota Motor North America,marquee,https://www.toyota.com/usa/careers/
+rivian,Rivian,Rivian Automotive,marquee,https://rivian.com/careers
+johndeere,John Deere,Deere & Company,marquee,https://www.deere.com/en/our-company/john-deere-careers/
+caterpillar,Caterpillar,CAT,marquee,https://www.caterpillar.com/en/careers.html
+3m,3M,3M Company,marquee,https://www.3m.com/3M/en_US/careers-us/
+pg,Procter & Gamble,P&G,marquee,https://www.pgcareers.com/
+cocacola,Coca-Cola,The Coca-Cola Company,marquee,https://www.coca-colacompany.com/careers
+pepsico,PepsiCo,Pepsi|Frito-Lay,marquee,https://www.pepsicojobs.com/
+nike,Nike,Nike Inc,marquee,https://jobs.nike.com/
+disney,Disney,The Walt Disney Company|Disney+,marquee,https://www.disneycareers.com/
+warnerbros,Warner Bros. Discovery,WBD|Warner Bros,marquee,https://www.wbd.com/careers/
+# Government & nonprofit
+nsa,NSA,National Security Agency,marquee,https://www.intelligencecareers.gov/nsa
+cia,CIA,Central Intelligence Agency,marquee,https://www.cia.gov/careers/
+fbi,FBI,Federal Bureau of Investigation,marquee,https://fbijobs.gov/
+teachforamerica,Teach For America,TFA,marquee,https://www.teachforamerica.org/how-to-join
+peacecorps,Peace Corps,Peace Corps,marquee,https://www.peacecorps.gov/
+cityofhouston,City of Houston,Houston City,marquee,https://www.houstontx.gov/hr/careers.html
+# Texas & Houston tech
+hp,HP,HP Inc|Hewlett-Packard,marquee,https://jobs.hp.com/
+ti-austin,Silicon Labs,SiLabs,marquee,https://www.silabs.com/about-us/careers
+indeed,Indeed,Indeed.com,marquee,https://www.indeed.com/cmp/Indeed/jobs
+cbre,CBRE,CBRE Group,marquee,https://careers.cbre.com/
+sysco,Sysco,Sysco Corporation,marquee,https://careers.sysco.com/
+waste-management,WM,Waste Management,marquee,https://careers.wm.com/
+crown-castle,Crown Castle,Crown Castle Inc,marquee,https://www.crowncastle.com/careers
+quorum,Quorum Software,Quorum,marquee,https://www.quorumsoftware.com/careers/
+hcss,HCSS,Heavy Construction Systems Specialists,marquee,https://www.hcss.com/careers/
+alert-logic,Alert Logic,Alert Logic by Fortra,marquee,https://www.fortra.com/careers
