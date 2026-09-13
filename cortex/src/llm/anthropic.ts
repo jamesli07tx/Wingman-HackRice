@@ -180,7 +180,50 @@ export async function opusParse<S extends z.ZodType>(opts: {
     );
   }
   const text = extractText(response.content as { type: string; text?: string }[]);
-  return opts.schema.parse(JSON.parse(text)) as z.infer<S>;
+  const raw: unknown = JSON.parse(text);
+  const first = opts.schema.safeParse(raw);
+  if (first.success) return first.data as z.infer<S>;
+  // Structured output enforces shape but not string/array lengths: a 41-char pitch line used to fail the
+  // whole card ("llm_down: pitch unavailable"). Clip over-long fields to the schema's own limits once.
+  const { value, clipped } = clipToSchemaIssues(raw, first.error);
+  if (clipped > 0) {
+    const second = opts.schema.safeParse(value);
+    if (second.success) {
+      console.warn(`[llm] clipped ${clipped} over-long field(s) to the lens limits`);
+      return second.data as z.infer<S>;
+    }
+  }
+  throw first.error;
+}
+
+/**
+ * For every zod `too_big` issue, shorten the offending string (word boundary + "…") or array to the
+ * issue's `maximum`. Returns a deep-copied value and the number of fields changed. Exported for tests.
+ */
+export function clipToSchemaIssues(raw: unknown, error: z.ZodError): { value: unknown; clipped: number } {
+  const value: unknown = JSON.parse(JSON.stringify(raw));
+  let clipped = 0;
+  for (const issue of error.issues) {
+    if (issue.code !== "too_big" || typeof (issue as { maximum?: unknown }).maximum !== "number") continue;
+    const max = (issue as { maximum: number }).maximum;
+    const path = issue.path as (string | number)[];
+    let parent: unknown = value;
+    for (const key of path.slice(0, -1)) parent = (parent as Record<string | number, unknown>)?.[key];
+    const last = path[path.length - 1];
+    if (parent == null || last == null) continue;
+    const holder = parent as Record<string | number, unknown>;
+    const cur = holder[last];
+    if (typeof cur === "string" && cur.length > max) {
+      const cut = cur.slice(0, Math.max(1, max - 1));
+      const sp = cut.lastIndexOf(" ");
+      holder[last] = (sp > max / 2 ? cut.slice(0, sp) : cut).trimEnd() + "…";
+      clipped++;
+    } else if (Array.isArray(cur) && cur.length > max) {
+      holder[last] = cur.slice(0, max);
+      clipped++;
+    }
+  }
+  return { value, clipped };
 }
 
 /** Convenience: opus-5 vision call — image first, instruction text last. */
