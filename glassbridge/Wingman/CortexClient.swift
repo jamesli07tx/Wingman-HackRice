@@ -40,6 +40,23 @@ struct FairImport: Decodable, Equatable {
 }
 struct FairImportEnvelope: Decodable { let `import`: FairImport }
 
+/// C3 summary card (shared/src/schemas.ts): title ≤ 28, subtitle ≤ 48, 3–5 lines ≤ 40 each.
+struct BriefCard: Codable, Equatable {
+  var title: String
+  var subtitle: String
+  var lines: [String]
+  static let titleMax = 28, subtitleMax = 48, lineMax = 40
+}
+
+/// One row of GET /api/me/companies: the shared card, or this user's own version when `custom`.
+struct MyCompany: Decodable, Equatable, Identifiable {
+  let companyId: String
+  let name: String
+  let card: BriefCard?
+  let custom: Bool
+  var id: String { companyId }
+}
+
 enum CortexError: Error, LocalizedError {
   case http(Int, String)
   case transport(Error)
@@ -134,6 +151,30 @@ struct CortexClient {
     struct Env: Decodable { let imports: [FairImport] }
     let env: Env = try decode(await send(authorized(request("api/fairs/imports", "GET"))))
     return env.imports
+  }
+
+  // MARK: my company briefs (cortex/src/rest/companyRoutes.ts)
+
+  func myCompanies() async throws -> [MyCompany] {
+    struct Env: Decodable { let companies: [MyCompany] }
+    let env: Env = try decode(await send(authorized(request("api/me/companies", "GET"))))
+    return env.companies
+  }
+
+  /// `companyId` nil = a company not on file (Cortex keys it by the name's slug).
+  func saveCompanyCard(companyId: String?, name: String, card: BriefCard) async throws -> MyCompany {
+    struct Body: Encodable { let name: String; let card: BriefCard }
+    struct Env: Decodable { let company: MyCompany }
+    var r = try await authorized(request(companyId.map { "api/me/companies/\($0)" } ?? "api/me/companies",
+                                         companyId == nil ? "POST" : "PUT"))
+    r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    r.httpBody = try Wire.encoder.encode(Body(name: name, card: card))
+    let env: Env = try decode(await send(r))
+    return env.company
+  }
+
+  func resetCompanyCard(companyId: String) async throws {
+    _ = try await send(authorized(request("api/me/companies/\(companyId)", "DELETE")))
   }
 
   // MARK: plumbing

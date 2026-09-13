@@ -39,7 +39,7 @@ struct RootView: View {
       topBar
       TabView {
         tab(ProfileView(), "Profile", "person.text.rectangle")
-        tab(FairView(), "Fair", "building.2")
+        tab(FairView(), "Companies", "building.2")
         tab(GlassesView(), "Glasses", "eyeglasses")
         tab(SessionView(), "Session", "play.circle")
         tab(FeedView(), "Feed", "waveform.path.ecg")

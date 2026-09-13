@@ -16,13 +16,52 @@ struct FairView: View {
   @State private var link = ""
   @State private var picked: PhotosPickerItem?
   @State private var readError: String?
+  @State private var query = ""
+  @State private var editing: BriefTarget?
 
   var body: some View {
     VStack(spacing: 16) {
+      briefsCard
       importCard
       if let imp = bridge.fairImport { resultCard(imp) }
     }
-    .task { await bridge.refreshFairImport() }
+    .task { await bridge.refreshFairImport(); await bridge.loadMyCompanies() }
+    .sheet(item: $editing) { target in BriefEditor(target: target).environmentObject(bridge) }
+  }
+
+  // MARK: my briefs
+
+  private var filtered: [MyCompany] {
+    let q = query.trimmingCharacters(in: .whitespaces)
+    return q.isEmpty ? bridge.myCompanies : bridge.myCompanies.filter { $0.name.localizedCaseInsensitiveContains(q) }
+  }
+
+  private var briefsCard: some View {
+    Card(title: "Your briefs", symbol: "square.and.pencil") {
+      Text("Tap a company to rewrite what YOUR glasses show for it. Only you see your version; everyone else keeps the shared brief.")
+        .font(.footnote).foregroundStyle(Theme.muted)
+        .fixedSize(horizontal: false, vertical: true)
+      TextField("", text: $query, prompt: Text("Search companies").foregroundColor(Theme.muted))
+        .autocorrectionDisabled().font(.footnote).wingmanField()
+      Button { editing = BriefTarget(company: nil) } label: { Text("New brief for a company not on file").frame(maxWidth: .infinity) }
+        .buttonStyle(GhostButtonStyle())
+        .disabled(!bridge.accountReady)
+      if let status = bridge.briefStatus { Banner(text: status, kind: status.hasPrefix("Cortex") ? .error : .note) }
+      ForEach(filtered.prefix(60)) { c in
+        Button { editing = BriefTarget(company: c) } label: {
+          HStack(spacing: 8) {
+            Circle().fill(c.custom ? Theme.accent : (c.card == nil ? Theme.warn : Theme.muted)).frame(width: 8, height: 8)
+            Text(c.name).font(.footnote).foregroundStyle(Theme.text).lineLimit(1)
+            Spacer()
+            Text(c.custom ? "yours" : (c.card == nil ? "no brief yet" : "shared")).font(.caption2).foregroundStyle(Theme.muted)
+            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Theme.muted)
+          }
+        }
+      }
+      if bridge.myCompanies.isEmpty, bridge.accountReady {
+        Text("No companies on file yet — import a fair list below.").font(.caption).foregroundStyle(Theme.muted)
+      }
+    }
   }
 
   private var importCard: some View {
@@ -101,6 +140,102 @@ struct FairView: View {
     case "enriched", "matched": return Theme.ok
     case "failed": return Theme.danger
     default: return Theme.warn
+    }
+  }
+}
+
+/// Sheet target: an existing row, or nil for a brand-new company (Cortex keys it by the name's slug).
+struct BriefTarget: Identifiable {
+  let company: MyCompany?
+  var id: String { company?.companyId ?? "new" }
+}
+
+/// Edit one brief within the lens limits (C3): title 28, subtitle 48, 3–5 lines of 40. Counts are shown
+/// live and Save is disabled while anything is over — Cortex rejects an over-limit card too.
+struct BriefEditor: View {
+  @EnvironmentObject private var bridge: BridgeController
+  @Environment(\.dismiss) private var dismiss
+  let target: BriefTarget
+  @State private var name: String
+  @State private var card: BriefCard
+
+  init(target: BriefTarget) {
+    self.target = target
+    let c = target.company
+    _name = State(initialValue: c?.name ?? "")
+    var card = c?.card ?? BriefCard(title: c?.name ?? "", subtitle: "", lines: ["", "", ""])
+    while card.lines.count < 3 { card.lines.append("") }
+    _card = State(initialValue: card)
+  }
+
+  private var usedLines: [String] { card.lines.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
+  private var valid: Bool {
+    !name.trimmingCharacters(in: .whitespaces).isEmpty
+      && !card.title.isEmpty && card.title.count <= BriefCard.titleMax
+      && card.subtitle.count <= BriefCard.subtitleMax
+      && (3...5).contains(usedLines.count) && usedLines.allSatisfy { $0.count <= BriefCard.lineMax }
+  }
+
+  var body: some View {
+    NavigationStack {
+      ZStack {
+        Theme.bg.ignoresSafeArea()
+        ScrollView {
+          VStack(spacing: 12) {
+            if target.company == nil {
+              limited("Company name", $name, max: 80)
+            } else {
+              Text(name).font(Theme.section).foregroundStyle(Theme.text).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            limited("Title (on the lens)", $card.title, max: BriefCard.titleMax)
+            limited("Subtitle — what they do", $card.subtitle, max: BriefCard.subtitleMax)
+            ForEach(card.lines.indices, id: \.self) { i in
+              limited("Bullet \(i + 1)", $card.lines[i], max: BriefCard.lineMax)
+            }
+            if card.lines.count < 5 {
+              Button("Add a bullet") { card.lines.append("") }.buttonStyle(GhostButtonStyle())
+            }
+            Text("3 to 5 bullets, each a short sentence with a period. Blank bullets are dropped.")
+              .font(.caption).foregroundStyle(Theme.muted).frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+              Task {
+                var c = card; c.lines = usedLines
+                if await bridge.saveBrief(companyId: target.company?.companyId, name: name.trimmingCharacters(in: .whitespaces), card: c) { dismiss() }
+              }
+            } label: {
+              HStack(spacing: 8) {
+                if bridge.briefBusy { ProgressView().controlSize(.small).tint(.black) }
+                Text("Save my brief")
+              }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(!valid || bridge.briefBusy)
+
+            if let c = target.company, c.custom {
+              Button("Reset to the shared brief") {
+                Task { if await bridge.resetBrief(companyId: c.companyId) { dismiss() } }
+              }
+              .buttonStyle(PrimaryButtonStyle(color: Theme.danger))
+              .disabled(bridge.briefBusy)
+            }
+            if let status = bridge.briefStatus, status.hasPrefix("Cortex") { Banner(text: status, kind: .error) }
+          }
+          .padding()
+        }
+      }
+      .navigationTitle(target.company == nil ? "New brief" : "Your brief")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+    }
+  }
+
+  private func limited(_ label: String, _ text: Binding<String>, max: Int) -> some View {
+    VStack(alignment: .trailing, spacing: 2) {
+      TextField("", text: text, prompt: Text(label).foregroundColor(Theme.muted))
+        .autocorrectionDisabled().font(.footnote).wingmanField()
+      Text("\(text.wrappedValue.count)/\(max)")
+        .font(.caption2).foregroundStyle(text.wrappedValue.count > max ? Theme.danger : Theme.muted)
     }
   }
 }

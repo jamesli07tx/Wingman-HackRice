@@ -347,6 +347,48 @@ final class BridgeController: ObservableObject {
     }
   }
 
+  // MARK: my company briefs (per user; the shared corpus is never edited from the app)
+
+  @Published private(set) var myCompanies: [MyCompany] = []
+  @Published private(set) var briefBusy = false
+  @Published var briefStatus: String?
+
+  func loadMyCompanies() async {
+    guard accountReady else { return }
+    do { myCompanies = try await cortex.myCompanies() } catch { briefStatus = error.localizedDescription }
+  }
+
+  /// Returns true on success so the editor can dismiss.
+  func saveBrief(companyId: String?, name: String, card: BriefCard) async -> Bool {
+    guard accountReady else { briefStatus = "Sign in first"; return false }
+    briefBusy = true
+    defer { briefBusy = false }
+    do {
+      let saved = try await cortex.saveCompanyCard(companyId: companyId, name: name, card: card)
+      if let i = myCompanies.firstIndex(where: { $0.companyId == saved.companyId }) { myCompanies[i] = saved }
+      else { myCompanies.append(saved); myCompanies.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
+      briefStatus = "Saved your brief for \(saved.name)"
+      return true
+    } catch {
+      briefStatus = error.localizedDescription
+      return false
+    }
+  }
+
+  func resetBrief(companyId: String) async -> Bool {
+    briefBusy = true
+    defer { briefBusy = false }
+    do {
+      try await cortex.resetCompanyCard(companyId: companyId)
+      await loadMyCompanies()
+      briefStatus = "Back to the shared brief"
+      return true
+    } catch {
+      briefStatus = error.localizedDescription
+      return false
+    }
+  }
+
   /// Latest import on the server (another phone or the console may have started one).
   func refreshFairImport() async {
     guard accountReady, !fairBusy else { return }
