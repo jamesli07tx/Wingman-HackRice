@@ -16,7 +16,7 @@ import type {
 import {
   CONF_THRESHOLD,
   NO_MATCH_BACKOFF_SEC,
-  PAGE1_MIN_SEC,
+  PAGE1_MIN_SEC, T_PITCH_MS,
   ROTATE_SEC,
   T_IDENTIFY_MS,
   T_PHOTO_MS,
@@ -296,7 +296,8 @@ describe("SessionOrchestrator", () => {
     h.orch.onDetection(sessionId, banner());
     // page 1 holds, the rotation finds no page 2 yet and retries; the pitch
     // degrades at T_PITCH_MS and the NEXT rotation shows it.
-    await vi.advanceTimersByTimeAsync(PAGE1_MIN_SEC * 1000 + ROTATE_SEC * 1000);
+    // Degrades at T_PITCH_MS (now longer than PAGE1_MIN_SEC); the NEXT rotation after that shows it.
+    await vi.advanceTimersByTimeAsync(Math.max(T_PITCH_MS, PAGE1_MIN_SEC * 1000) + ROTATE_SEC * 1000);
 
     const last = h.channel.lastCard()!;
     expect(last).toMatchObject({ page: { index: 2, count: 2 }, subtitle: "Your pitch" });
