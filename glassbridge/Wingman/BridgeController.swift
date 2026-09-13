@@ -347,6 +347,15 @@ final class BridgeController: ObservableObject {
     }
   }
 
+  /// Pull-to-refresh: every server-backed list, in parallel. Session state is live over the socket already.
+  func refreshAll() async {
+    guard accountReady else { return }
+    async let p: () = refreshProfile()
+    async let c: () = loadMyCompanies()
+    async let f: () = refreshFairImport()
+    _ = await (p, c, f)
+  }
+
   // MARK: my company briefs (per user; the shared corpus is never edited from the app)
 
   @Published private(set) var myCompanies: [MyCompany] = []

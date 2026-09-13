@@ -53,6 +53,7 @@ struct RootView: View {
     ZStack {
       Theme.bg.ignoresSafeArea()
       ScrollView { view.padding() }
+        .refreshable { await bridge.refreshAll() }   // pull down on any tab: re-read everything from Cortex
     }
     .tabItem { Label(title, systemImage: symbol) }
   }
