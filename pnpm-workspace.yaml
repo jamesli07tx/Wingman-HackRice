@@ -4,6 +4,7 @@ packages:
   - shared
   - cortex
   - console
+  - ui
   - corpus
 allowBuilds:
   esbuild: true

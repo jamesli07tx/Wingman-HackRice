@@ -14,6 +14,7 @@ the merge contract).
 | `cortex/` | Backend — WS hub, scene gate, identify/context/pitch/scan, sessions (Fly.io) | Windows |
 | `console/` | Next.js web app — onboarding, dashboard, phone capture mode (Vercel) | Windows |
 | `corpus/` | Employer corpus ingest + enrichment scripts | Windows |
+| `ui/` | Redesigned Next.js console, a second workspace app (`node scripts/dev-ui.mjs` on :3001) | Windows |
 | `glassbridge/` | Swift iOS app bridging the glasses (camera stream + HUD render) — see `glassbridge/README.md` and DESIGN_MAC.md | **Mac** |
 
 ## Quickstart (Windows side)

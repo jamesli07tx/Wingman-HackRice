@@ -1,0 +1,191 @@
+@import "tailwindcss";
+
+/* Wingman console — Confidanz product design language (clinician portal /
+   patient app): #F9F9F9 page ground, white cards on shadow-lg, navy ink
+   #182849, product blue #4472C4 with pale-blue #DFE7F5 for pills and selected
+   states, Roboto 400/700. Light mode only, like the product. Motion is the
+   portal's transition-colors/pulse vocabulary plus choreographed entrances,
+   all reduced-motion safe. /capture and the lens replicas paint their own
+   colors and ignore all this. */
+
+:root {
+  /* ground and surfaces (portal PageLayout + cards) */
+  --ground: #f9f9f9;
+  --panel: #ffffff;
+  --panel-2: #f3f4f6;
+  --rule: #e5e7eb;
+  --fg: #182849;
+  --muted: #6b7280;
+  --faint: #9ca3af;
+  --sidebar-ink: #46536d;
+
+  /* product blue family */
+  --accent: #4472c4;
+  --accent-strong: #2b5797;
+  --accent-deep: #dfe7f5;
+  --accent-ink: #ffffff;
+  --navy-900: #1a237e;
+
+  /* selected / focus = product blue (no separate selection hue in the product) */
+  --sel: #4472c4;
+
+  /* status pairs from the portal theme */
+  --good: #326534;
+  --good-soft: #d6edd7;
+  --warn: #ac9a00;
+  --warn-soft: #fffedc;
+  --bad: #dc2626;
+  --bad-soft: #fad3d3;
+
+  /* elevation: cards shadow-lg, chrome shadow-md (portal values) */
+  --shadow-1: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-2: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  /* materials + motion */
+  --glass: color-mix(in srgb, var(--panel) 92%, transparent);
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --t-press: 120ms;
+  --t-swap: 200ms;
+  --t-panel: 250ms;
+
+  color-scheme: light;
+}
+
+@theme {
+  --font-sans: var(--font-roboto), Roboto, system-ui, sans-serif;
+}
+
+html,
+body {
+  background: var(--ground);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family: var(--font-roboto), Roboto, system-ui, sans-serif;
+  font-size: 16px;
+}
+
+/* Display = Roboto bold (the product has one face) */
+.font-display {
+  font-family: var(--font-roboto), Roboto, system-ui, sans-serif;
+  font-weight: 700;
+}
+
+/* Numbers that get compared line up */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: var(--accent-deep);
+}
+
+:focus-visible {
+  outline: 2px solid var(--sel);
+  outline-offset: 2px;
+}
+
+/* --- motion ------------------------------------------------------------- */
+
+/* Panel/card entrance: rise and settle */
+@keyframes wm-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.anim-rise {
+  animation: wm-rise var(--t-panel) var(--ease) both;
+}
+
+/* View swap: brief dip, new content lands */
+@keyframes wm-swap {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.anim-swap {
+  animation: wm-swap var(--t-swap) var(--ease) both;
+}
+
+/* Loading placeholder: the portal's animate-pulse gray-200 skeleton */
+@keyframes wm-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+.skeleton {
+  border-radius: 6px;
+  background: var(--rule);
+  animation: wm-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Press feedback on controls (portal: transition-colors duration-200) */
+.pressable {
+  transition:
+    transform var(--t-press) var(--ease),
+    background-color var(--t-swap) var(--ease),
+    color var(--t-swap) var(--ease),
+    box-shadow var(--t-swap) var(--ease),
+    border-color var(--t-swap) var(--ease);
+}
+.pressable:active {
+  transform: scale(0.97);
+}
+
+/* Disclosure: grid-rows collapse, opacity trails */
+.reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--t-panel) var(--ease);
+}
+.reveal > * {
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity var(--t-swap) var(--ease);
+}
+.reveal[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+.reveal[data-open="true"] > * {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-rise,
+  .anim-swap,
+  .skeleton {
+    animation: none;
+  }
+  .pressable,
+  .pressable:active,
+  .reveal,
+  .reveal > * {
+    transition: none;
+    transform: none;
+  }
+  .seg-thumb {
+    transition: none !important;
+  }
+}
+
+/* Feed autoscroll container */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
