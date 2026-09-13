@@ -98,7 +98,7 @@ final class DashboardEventTests: XCTestCase {
                    .silencedIdentify(sessionId: "s_42", nameGuess: "Ada Lovelace", confidence: 0.42))
     XCTAssertEqual(try Wire.decodeDashboard(#"{ "type": "silenced_identify", "sessionId": "s", "nameGuess": null, "confidence": 0.1 }"#),
                    .silencedIdentify(sessionId: "s", nameGuess: nil, confidence: 0.1))
-    XCTAssertEqual(DashboardEvent.confThreshold, 0.6)   // shared/src/constants.ts CONF_THRESHOLD
+    XCTAssertEqual(DashboardEvent.confThreshold, 0.25)   // shared/src/constants.ts CONF_THRESHOLD
   }
 
   func testDecodesRenderMirroringTheHudCard() throws {
@@ -114,8 +114,8 @@ final class DashboardEventTests: XCTestCase {
   }
 
   func testDecodesStatusWithAndWithoutOptionals() throws {
-    XCTAssertEqual(try Wire.decodeDashboard(#"{ "type": "status", "sessionId": "s", "battery": 0.61, "note": "reconnected" }"#),
-                   .status(sessionId: "s", battery: 0.61, note: "reconnected"))
+    XCTAssertEqual(try Wire.decodeDashboard(#"{ "type": "status", "sessionId": "s", "battery": 0.251, "note": "reconnected" }"#),
+                   .status(sessionId: "s", battery: 0.251, note: "reconnected"))
     XCTAssertEqual(try Wire.decodeDashboard(#"{ "type": "status", "sessionId": "s" }"#),
                    .status(sessionId: "s", battery: nil, note: nil))
   }

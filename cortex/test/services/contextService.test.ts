@@ -150,24 +150,69 @@ describe("ContextService — miss -> Tavily live path", () => {
     expect(fetchFake.calls).toHaveLength(0);
   });
 
-  it("returns null when Tavily fails, without throwing", async () => {
+  it("throws on a Tavily HTTP failure (search_down), and does not retry a status", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const supabase = makeFakeSupabase(() => EMPTY);
-    const fetchFake = makeFakeFetch({}, { ok: false, status: 503 });
+    const fetchFake = makeFakeFetch({}, { ok: false, status: 401 });
     const summarize = vi.fn();
     const svc = new ContextService(supabase.client, fetchFake.fetchImpl, summarize, {
       tavilyApiKey: "tvly-test",
     });
 
-    expect(await svc.resolve({ corpusId: null, nameGuess: "Ramp" })).toBeNull();
+    // A dead key used to read as "No match" on the lens — it is a search outage.
+    await expect(svc.resolve({ corpusId: null, nameGuess: "Ramp" })).rejects.toThrow("tavily HTTP 401");
+    expect(fetchFake.calls).toHaveLength(1);
     expect(summarize).not.toHaveBeenCalled();
+    expect(warn.mock.calls[0]?.[0]).toContain("tavily HTTP 401");
+    warn.mockRestore();
   });
 
-  it("skips the live path entirely with no TAVILY_API_KEY", async () => {
+  it("retries a dropped connection exactly once, inside the same budget", async () => {
+    const supabase = makeFakeSupabase(() => EMPTY);
+    let calls = 0;
+    const fetchImpl = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("ECONNRESET");
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ answer: "Ramp does corporate cards.", results: [] }),
+      };
+    };
+    const summarize = vi.fn().mockResolvedValue(TAVILY_CARD);
+    const svc = new ContextService(supabase.client, fetchImpl, summarize, {
+      tavilyApiKey: "tvly-test",
+    });
+
+    const ctx = await svc.resolve({ corpusId: null, nameGuess: "Ramp" });
+    expect(calls).toBe(2);
+    expect(ctx!.card).toEqual(TAVILY_CARD);
+  });
+
+  it("renders the raw evidence degraded (not no_match) when the condense fails", async () => {
+    const supabase = makeFakeSupabase(() => EMPTY);
+    const fetchFake = makeFakeFetch({
+      answer: "Ramp is a corporate card and spend management company.",
+      results: [],
+    });
+    const summarize = vi.fn().mockRejectedValue(new Error("opus down"));
+    const svc = new ContextService(supabase.client, fetchFake.fetchImpl, summarize, {
+      tavilyApiKey: "tvly-test",
+    });
+
+    const ctx = await svc.resolve({ corpusId: null, nameGuess: "Ramp" });
+    expect(ctx!.card.subtitle).toBe("Pulling details…");
+    expect(ctx!.card.lines[0]).toContain("corporate card");
+    // a bad card must never become the cached instant path for this booth
+    expect(supabase.calls.find((c) => c.op === "upsert")).toBeUndefined();
+  });
+
+  it("throws instead of silently skipping the live path with no TAVILY_API_KEY", async () => {
     const supabase = makeFakeSupabase(() => EMPTY);
     const fetchFake = makeFakeFetch({});
     const svc = new ContextService(supabase.client, fetchFake.fetchImpl, vi.fn());
 
-    expect(await svc.resolve({ corpusId: null, nameGuess: "Ramp" })).toBeNull();
+    await expect(svc.resolve({ corpusId: null, nameGuess: "Ramp" })).rejects.toThrow("tavily key missing");
     expect(fetchFake.calls).toHaveLength(0);
   });
 });

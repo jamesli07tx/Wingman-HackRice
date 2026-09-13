@@ -15,12 +15,16 @@ import type {
 } from "@wingman/shared";
 import {
   CONF_THRESHOLD,
+  NO_MATCH_BACKOFF_SEC,
   PAGE1_MIN_SEC,
   ROTATE_SEC,
   T_IDENTIFY_MS,
   T_PHOTO_MS,
   deviceConfig,
 } from "@wingman/shared";
+import { ContextService } from "../../src/context/ContextService.js";
+import type { SummaryCardSummarizer } from "../../src/context/ContextService.js";
+import { makeFakeFetch, makeFakeSupabase } from "../services/fakes.js";
 import { SessionOrchestrator } from "../../src/session/SessionOrchestrator.js";
 import type {
   CompanyContext,
@@ -113,7 +117,7 @@ const PITCH: SummaryCardContent = {
 
 const never = new Promise<never>(() => undefined);
 
-function harness(opts: { profile?: ProfileSummary | null } = {}) {
+function harness(opts: { profile?: ProfileSummary | null; context?: ContextProvider } = {}) {
   const channel = new FakeChannel();
   const gate = new FakeGate();
   const dashboardEvents: DashboardEvent[] = [];
@@ -133,7 +137,7 @@ function harness(opts: { profile?: ProfileSummary | null } = {}) {
   }));
 
   const identifier: Identifier = { identify };
-  const context: ContextProvider = { resolve, byId, search: async () => [] };
+  const context: ContextProvider = opts.context ?? { resolve, byId, search: async () => [] };
   const pitch: PitchServiceApi = { pitchPage };
   const scan: ScanServiceApi = { extract };
 
@@ -220,6 +224,43 @@ describe("SessionOrchestrator", () => {
     expect(h.dashboardEvents.filter((e) => e.type === "render")).toHaveLength(2);
   });
 
+  it("a run of 'nothing' frames never cancels an in-flight identify — card and pitch still land", async () => {
+    const h = harness();
+    const sessionId = await arm(h);
+
+    // Identify is slow; the wearer has already looked away by the time it answers.
+    let answer!: (r: IdentifyResult) => void;
+    h.identify.mockReturnValueOnce(new Promise<IdentifyResult>((r) => (answer = r)));
+
+    h.orch.onDetection(sessionId, banner());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.orch.stateOf(sessionId)).toBe("IDENTIFYING");
+
+    // Three blank frames while the flight is open: forwarded to the gate, inert here.
+    for (const seq of [11, 12, 13]) h.orch.onFrame("dev_1", seq, Buffer.from("blank"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.gate.frames.map((f) => f.seq)).toEqual([11, 12, 13]);
+    expect(h.orch.stateOf(sessionId)).toBe("IDENTIFYING");
+
+    answer({ corpusId: "stripe", nameGuess: "Stripe", confidence: 0.93 });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.channel.lastCard()).toMatchObject({
+      kind: "company",
+      title: "stripe",
+      page: { index: 1, count: 2 },
+    });
+    expect(h.pitchPage).toHaveBeenCalledTimes(1);
+    expect(h.orch.stateOf(sessionId)).toBe("PRESENTING");
+
+    // …and the pitch page still rotates in behind it.
+    await vi.advanceTimersByTimeAsync(PAGE1_MIN_SEC * 1000);
+    expect(h.channel.lastCard()).toMatchObject({
+      page: { index: 2, count: 2 },
+      subtitle: "Your pitch",
+    });
+  });
+
   it("rotation: page 1 holds PAGE1_MIN_SEC, then alternates every ROTATE_SEC with the same cardId", async () => {
     const h = harness();
     const sessionId = await arm(h);
@@ -253,7 +294,9 @@ describe("SessionOrchestrator", () => {
     h.pitchPage.mockReturnValueOnce(never);
 
     h.orch.onDetection(sessionId, banner());
-    await vi.advanceTimersByTimeAsync(PAGE1_MIN_SEC * 1000);
+    // page 1 holds, the rotation finds no page 2 yet and retries; the pitch
+    // degrades at T_PITCH_MS and the NEXT rotation shows it.
+    await vi.advanceTimersByTimeAsync(PAGE1_MIN_SEC * 1000 + ROTATE_SEC * 1000);
 
     const last = h.channel.lastCard()!;
     expect(last).toMatchObject({ page: { index: 2, count: 2 }, subtitle: "Your pitch" });
@@ -261,7 +304,7 @@ describe("SessionOrchestrator", () => {
     expect(h.channel.errors().map((e) => e.code)).toContain("llm_down");
   });
 
-  it("silence below CONF_THRESHOLD: dashboard-only, nothing new on the lens (D13)", async () => {
+  it("unsure identify with a name: Researching… card, then the researched company card", async () => {
     const h = harness();
     const sessionId = await arm(h);
     h.identify.mockResolvedValueOnce({
@@ -269,20 +312,96 @@ describe("SessionOrchestrator", () => {
       nameGuess: "Maybe Stripe",
       confidence: CONF_THRESHOLD - 0.01,
     });
+    h.resolve.mockResolvedValueOnce(companyContext("maybe-stripe"));
 
     h.orch.onDetection(sessionId, banner());
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(h.channel.cards().map((c) => c.kind)).toEqual(["ack"]); // ack only — no company card
+    const cards = h.channel.cards();
+    expect(cards[0]).toMatchObject({ kind: "ack", title: "Identifying…" });
+    expect(cards[1]).toMatchObject({
+      cardId: cards[0]!.cardId, // replaces the ack in place
+      seq: 2,
+      kind: "ack",
+      title: "Researching…",
+      subtitle: "Maybe Stripe",
+      lines: ["Looking up Maybe Stripe"],
+      footer: "Wingman",
+    });
+    // live path, not the corpus guess
+    expect(h.resolve).toHaveBeenCalledWith({ corpusId: null, nameGuess: "Maybe Stripe" });
+    expect(cards[2]).toMatchObject({ kind: "company", title: "maybe-stripe" });
+    expect(h.orch.stateOf(sessionId)).toBe("PRESENTING");
+    // the operator still sees the doubt on the feed (D13)
     expect(h.dashboardEvents).toContainEqual({
       type: "silenced_identify",
       sessionId,
       nameGuess: "Maybe Stripe",
       confidence: CONF_THRESHOLD - 0.01,
     });
+  });
+
+  it("unsure with no name anywhere: hint + backoff, nothing to research", async () => {
+    const h = harness();
+    const sessionId = await arm(h);
+    h.identify.mockResolvedValueOnce({ corpusId: null, nameGuess: null, confidence: 0.1 });
+
+    h.orch.onDetection(sessionId, banner(null));
+    await vi.advanceTimersByTimeAsync(0);
+
     expect(h.resolve).not.toHaveBeenCalled();
+    expect(h.channel.lastCard()).toMatchObject({ kind: "hint", title: "No match" });
     expect(h.orch.stateOf(sessionId)).toBe("ARMED");
-    expect(h.gate.flights).toEqual([sessionId]); // latch released either way
+
+    // the "*" key is backed off too — a nameless banner cannot loop either
+    h.orch.onDetection(sessionId, banner(null));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.identify).toHaveBeenCalledTimes(1);
+  });
+
+  it("no_match backs the same orgHint off: no ack/hint loop, then re-identifies", async () => {
+    const h = harness();
+    const sessionId = await arm(h);
+    h.resolve.mockResolvedValueOnce(null);
+
+    h.orch.onDetection(sessionId, banner("Stripe"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.channel.lastCard()).toMatchObject({ kind: "hint", title: "No match" });
+    const afterFirst = h.channel.cards().length; // ack + hint, rendered once
+
+    // The wearer keeps looking; the gate keeps firing. The lens stays put.
+    h.orch.onDetection(sessionId, banner("Stripe"));
+    h.orch.onDetection(sessionId, banner(" stripe ")); // same key, different casing
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.identify).toHaveBeenCalledTimes(1);
+    expect(h.channel.cards()).toHaveLength(afterFirst);
+    expect(h.gate.flights).toHaveLength(3); // latch released on every suppression
+    expect(
+      h.dashboardEvents.filter((e) => e.type === "status" && e.note?.startsWith("identify backoff")),
+    ).toHaveLength(2);
+
+    // Window expires -> the same banner is fair game again.
+    await vi.advanceTimersByTimeAsync(NO_MATCH_BACKOFF_SEC * 1000);
+    h.orch.onDetection(sessionId, banner("Stripe"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.identify).toHaveBeenCalledTimes(2);
+    expect(h.channel.lastCard()).toMatchObject({ kind: "company", title: "stripe" });
+  });
+
+  it("a different orgHint bypasses another banner's backoff", async () => {
+    const h = harness();
+    const sessionId = await arm(h);
+    h.resolve.mockResolvedValueOnce(null);
+    h.orch.onDetection(sessionId, banner("Stripe"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    h.identify.mockResolvedValueOnce({ corpusId: "ramp", nameGuess: "Ramp", confidence: 0.9 });
+    h.resolve.mockResolvedValueOnce(companyContext("ramp"));
+    h.orch.onDetection(sessionId, banner("Ramp"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.identify).toHaveBeenCalledTimes(2);
+    expect(h.channel.lastCard()).toMatchObject({ kind: "company", title: "ramp" });
   });
 
   it("identify timeout degrades to a hint card and returns to ARMED", async () => {
@@ -473,5 +592,87 @@ describe("SessionOrchestrator", () => {
     h.orch.onDisconnect("dev_1");
     expect(h.orch.activeSessionForUser()).toBeNull();
     expect(h.orch.startForDevice("dev_1")).toBeNull();
+  });
+});
+
+// The research path for real: SessionOrchestrator -> ContextService.resolve ->
+// Tavily REST -> condense -> present. Only fetch and Supabase are faked.
+describe("SessionOrchestrator + ContextService live research path", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] });
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const RAMP_CARD: SummaryCardContent = {
+    title: "Ramp",
+    subtitle: "Corporate cards and spend management",
+    lines: ["Hiring: SWE Intern (NYC)", "Stack: TypeScript, Go", "Recently: launched Ramp AI"],
+  };
+
+  function research(fetchFake: ReturnType<typeof makeFakeFetch>, summarize: SummaryCardSummarizer) {
+    const supabase = makeFakeSupabase(() => ({ data: null, error: null })); // empty corpus
+    const context = new ContextService(supabase.client, fetchFake.fetchImpl, summarize, {
+      tavilyApiKey: "tvly-test",
+    });
+    return harness({ context });
+  }
+
+  it("a name the corpus does not have is searched on Tavily and rendered as a company card", async () => {
+    const fetchFake = makeFakeFetch({
+      answer: "Ramp is a corporate card and spend management company.",
+      results: [
+        { title: "Ramp careers", url: "https://ramp.com/careers", content: "SWE Intern, New York." },
+      ],
+    });
+    const summarize = vi.fn(async () => RAMP_CARD);
+    const h = research(fetchFake, summarize);
+    const sessionId = await arm(h);
+    h.identify.mockResolvedValueOnce({ corpusId: null, nameGuess: "Ramp", confidence: 0.7 });
+
+    h.orch.onDetection(sessionId, banner("Ramp"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fetchFake.calls).toHaveLength(1);
+    expect(fetchFake.calls[0].url).toBe("https://api.tavily.com/search");
+    const init = fetchFake.calls[0].init as { headers: Record<string, string>; body: string };
+    expect(init.headers.authorization).toBe("Bearer tvly-test");
+    expect(JSON.parse(init.body)).toMatchObject({ api_key: "tvly-test", max_results: 5, include_answer: true });
+    expect(summarize).toHaveBeenCalledTimes(1);
+
+    expect(h.channel.cards().map((c) => c.title)).toEqual(["Identifying…", "Researching…", "Ramp"]);
+    expect(h.channel.lastCard()).toMatchObject({
+      kind: "company",
+      company: { companyId: "ramp", confidence: 0.7 },
+    });
+    expect(h.channel.lastCard()!.lines).toEqual(RAMP_CARD.lines);
+  });
+
+  it("Tavily HTTP 5xx is search_down on the lens and the feed, and backs the banner off", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fetchFake = makeFakeFetch({}, { ok: false, status: 503 });
+    const summarize = vi.fn(async () => RAMP_CARD);
+    const h = research(fetchFake, summarize);
+    const sessionId = await arm(h);
+    h.identify.mockResolvedValueOnce({ corpusId: null, nameGuess: "Ramp", confidence: 0.7 });
+
+    h.orch.onDetection(sessionId, banner("Ramp"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(summarize).not.toHaveBeenCalled();
+    expect(fetchFake.calls).toHaveLength(1); // an HTTP status is final — no retry
+    expect(h.channel.errors().map((e) => e.code)).toContain("search_down");
+    expect(h.channel.lastCard()).toMatchObject({ kind: "hint", title: "Pulling details" });
+    expect(h.dashboardEvents).toContainEqual({
+      type: "status",
+      sessionId,
+      note: "search_down: tavily HTTP 503",
+    });
+    expect(warn.mock.calls[0]?.[0]).toContain("tavily HTTP 503");
+
+    // and the same banner does not loop straight back into it
+    h.orch.onDetection(sessionId, banner("Ramp"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.identify).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 });

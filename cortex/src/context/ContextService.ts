@@ -60,7 +60,13 @@ export type FetchLike = (
     body?: string;
     signal?: AbortSignal;
   },
-) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
+) => Promise<{
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+  /** optional so tiny fakes stay valid; used only to log a failure body */
+  text?: () => Promise<string>;
+}>;
 
 export interface ContextServiceOptions {
   /** defaults to process.env.TAVILY_API_KEY */
@@ -71,6 +77,15 @@ export interface ContextServiceOptions {
 }
 
 const TAVILY_URL = "https://api.tavily.com/search";
+
+/** Tavily answered, but not with a result: a key/quota/server problem, never a
+ *  "no such company". Thrown so the orchestrator degrades with `search_down`
+ *  (a swallowed null here is what made a dead API key look like "No match"). */
+class TavilyHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`tavily HTTP ${status}`);
+  }
+}
 
 interface CompanyRow {
   company_id: string;
@@ -197,11 +212,11 @@ export class ContextService implements ContextProvider {
     const evidence = await this.tavily(name);
     if (!evidence) return null;
 
-    let card: SummaryCardContent;
+    let card: SummaryCardContent | null = null;
     try {
       card = SummaryCardSchema.parse(await this.summarize({ name, evidence }));
     } catch {
-      return null;
+      card = null; // condense failed — the evidence below still beats "No match"
     }
 
     const companyId = slugify(name);
@@ -219,6 +234,20 @@ export class ContextService implements ContextProvider {
       source: "tavily",
       updatedAt: new Date().toISOString(),
     };
+
+    if (!card) {
+      // Tavily found material but opus could not condense it: render the raw
+      // evidence degraded rather than dropping to no_match, and do NOT cache —
+      // a bad card must not become the instant path for this booth.
+      const degraded = fallbackCard(record);
+      if (!degraded) return null;
+      return {
+        companyId,
+        displayName: name,
+        card: { ...degraded, subtitle: "Pulling details…" },
+        record,
+      };
+    }
 
     // Cache back so the next look at this booth takes the instant path.
     // A write failure must never cost us the card we already have.
@@ -247,17 +276,40 @@ export class ContextService implements ContextProvider {
     return { companyId, displayName: name, card, record };
   }
 
-  /** Tavily REST, T_SEARCH_MS budget. Returns flattened evidence text. */
+  /** Tavily REST inside one T_SEARCH_MS budget, with a single retry for a
+   *  dropped connection. Returns flattened evidence text, null when Tavily
+   *  genuinely found nothing, and THROWS when Tavily itself is unusable
+   *  (missing key, HTTP error) so the lens can say `search_down`. */
   private async tavily(name: string): Promise<string | null> {
     const apiKey = this.opts.tavilyApiKey ?? process.env.TAVILY_API_KEY;
-    if (!apiKey) return null;
+    if (!apiKey) throw new Error("tavily key missing");
 
+    // Both attempts share ONE deadline: a retry must not double the budget the
+    // orchestrator is holding a "Researching…" card against.
+    const until = Date.now() + this.searchTimeoutMs;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const left = until - Date.now();
+      if (left <= 0) return null;
+      try {
+        return await this.tavilyOnce(name, apiKey, left);
+      } catch (err) {
+        // HTTP status = final (a retry would just burn the budget); transport
+        // error = one retry, then give up.
+        if (err instanceof TavilyHttpError || attempt === 1) throw err;
+      }
+    }
+    return null;
+  }
+
+  private async tavilyOnce(name: string, apiKey: string, budgetMs: number): Promise<string | null> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.searchTimeoutMs);
+    const timer = setTimeout(() => controller.abort(), budgetMs);
     try {
       const res = await this.fetchImpl(this.tavilyUrl, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        // Current Tavily docs authenticate with a bearer token; the legacy
+        // `api_key` body field is sent too so either form works.
+        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
           api_key: apiKey,
           query: `${name} company overview hiring university recruiting`,
@@ -267,7 +319,12 @@ export class ContextService implements ContextProvider {
         }),
         signal: controller.signal,
       });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        const body = res.text ? (await res.text().catch(() => "")).slice(0, 120) : "";
+        // eslint-disable-next-line no-console
+        console.warn(`[context] tavily HTTP ${res.status} for "${name}": ${body}`);
+        throw new TavilyHttpError(res.status);
+      }
       const body = (await res.json()) as {
         answer?: string | null;
         results?: { title?: string; url?: string; content?: string }[];
@@ -279,8 +336,6 @@ export class ContextService implements ContextProvider {
       }
       const evidence = parts.filter(Boolean).join("\n\n").trim();
       return evidence.length > 0 ? evidence : null;
-    } catch {
-      return null; // timeout / network — orchestrator degrades, never hangs
     } finally {
       clearTimeout(timer);
     }

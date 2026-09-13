@@ -32,9 +32,9 @@ A phone mode mirrors the whole experience in a mobile browser (phone camera + AR
 | D8 | Single-user demo. Managed auth (Clerk), one seeded account. Resume PDF + LinkedIn/X/GitHub/personal-site URLs collected in web-app onboarding. |
 | D9 | Device linking: GlassBridge uses a TV-style 6-digit code shown on the dashboard. Phone mode uses `POST /api/devices/self-claim` (Clerk-authenticated, mints its own token — no code dance in a mobile browser). Past links cached and listed on home screen. |
 | D10 | Session survives closing the dashboard. Requires phone on with GlassBridge running; background streaming is supported by DAT (since v0.5.0). GlassBridge runs a **silent-audio keepalive** (§5.1) so iOS keeps the process alive when the phone locks; whether the DAT stream itself keeps delivering under lock is undocumented — verified at M2, with Auto-Lock Never / Guided Access as the zero-code fallback. Phone-off is out of scope. |
-| D11 | Output: display only. No TTS. Company cards are a **two-page auto-rotation**: summary page first (≥ 15 s), then alternate with the pitch page every 12 s, footer marker "1/2 · 2/2". A card set persists until a *different* company is stably identified (and the current set has been visible ≥ 15 s) or Stop. |
+| D11 | Output: display only. No TTS. Company cards are a **two-page auto-rotation**: summary page first (≥ 5 s), then alternate with the pitch page every 12 s, footer marker "1/2 · 2/2". A card set persists until a *different* company is stably identified (and the current set has been visible ≥ 5 s) or Stop. A card is never cleared by looking away: an identification that started always runs to completion. |
 | D12 | Every module seam carries an `// INTEGRATION:` comment block (§5). Three people build three isolated components against frozen contracts. `shared/protocol.ts` freezes at hour 2. |
-| D13 | **Churn rules** (the product's core tuning, §3.3): stability = same gate class on 2 consecutive frames before acting · single-flight = one identify/scan in flight, frames dropped while busy · cooldown = a presented company is suppressed from re-identification for 10 min (override bypasses) · replace-on-change = a different stable company replaces the card set · **silence below 0.6 confidence** — an automatic system never asks the wearer a question; low confidence renders nothing on the lens (it *is* logged to the dashboard feed so the operator can override). |
+| D13 | **Churn rules** (the product's core tuning, §3.3): stability = same gate class on 2 consecutive frames before acting · single-flight = one identify/scan in flight, frames dropped while busy · cooldown = a presented company is suppressed from re-identification for 1 min (override bypasses) · replace-on-change = a different stable company replaces the card set · **below 0.25 confidence, or no corpus hit, the name is researched, not silenced** — the live path (Tavily → condense) runs behind a "Researching…" card; only a banner with *no* name at all renders nothing. The doubt is still logged to the dashboard feed so the operator can override. · **no-match backoff** = after no_match / search_down / identify_timeout the same gate `orgHint` is not re-identified for 20 s, so an unreadable banner cannot loop ack → hint → ack. |
 | D14 | **Always-on capture optics, accepted deliberately:** the capture LED is lit continuously while armed (forced by platform — this is the honest signal). Frames are ephemeral: gated in memory, never persisted; document photos discarded after extraction; no audio exists at all. Battery cost of continuous streaming is **accepted** (arm per demo run, charger in pocket, measured at M2). Say all of this to judges proactively — it's a strength. |
 
 ---
@@ -138,7 +138,7 @@ sequenceDiagram
     C->>B: render company card (page 1/2)   [< 5 s from stable view]
     C->>A: opus-5: pitch (profile + company record, streaming) — auto-started
     C->>B: render pitch page (2/2)          [< 10 s]
-    Note over C: rotation timer alternates pages every 12 s (summary holds ≥ 15 s first)
+    Note over C: rotation timer alternates pages every 12 s (summary holds ≥ 5 s first)
     U->>G: (holds up a pamphlet)
     C->>C: gate: "document" × 2 → STABLE
     C->>B: capture_photo (quality: document)
@@ -168,18 +168,23 @@ The gate is what makes always-on vision affordable: haiku sees every frame (~$0.
 IDLE ──start──▶ ARMED (streaming + gating every frame)
 ARMED:   banner ×2 stable, not in cooldown, no flight ──▶ IDENTIFYING
          document ×2 stable, no flight ──────────────────▶ SCANNING
-IDENTIFYING: confidence ≥ 0.6 ──▶ PRESENTING (render card set, start pitch, start rotation)
-             confidence < 0.6 ──▶ silent → back to ARMED (logged to dashboard feed only)
-             timeout ───────────▶ degraded hint card → ARMED
-PRESENTING:  gating continues. different company ×2 stable & current set shown ≥ 15 s ──▶ IDENTIFYING (replace)
-             same company ──▶ suppressed (10-min cooldown)
+IDENTIFYING: corpus hit, confidence ≥ 0.25 ──▶ PRESENTING (render card set, start pitch, start rotation)
+             unsure (no corpus hit OR confidence < 0.25) + a usable name (nameGuess, else gate orgHint)
+                 ──▶ RESEARCHING ("Researching…" card; ContextService live path: exact row → Tavily → condense)
+                     found ──▶ PRESENTING (identical to a corpus hit)   not found / search down ──▶ hint → ARMED
+             unsure with no name at all ──▶ hint → ARMED
+             timeout / no_match / search_down ──▶ degraded hint card ONCE → ARMED + 20 s identify backoff for that orgHint
+             (a backed-off orgHint is dropped silently: no ack, no hint, no LLM call. A different orgHint bypasses it.)
+PRESENTING:  gating continues; `nothing` frames change nothing — an identify/pitch in flight always completes.
+             different company ×2 stable & current set shown ≥ 5 s ──▶ IDENTIFYING (replace)
+             same company ──▶ suppressed (1-min cooldown)
              document ×2 stable ──▶ SCANNING → merge into current card set
 SCANNING (no company context): standalone kind:"scan" card → PRESENTING
 any state ──stop──▶ IDLE (session memory purged: frames, photos, context)
 Dashboard override: force companyId at any time → PRESENTING (bypasses gate, cooldown, confidence)
 ```
 
-**D13 rules are enforced here:** single-flight (frames dropped while an identify/scan is in flight), stability (×2), cooldown map (companyId → timestamp), silence below 0.6. Rotation is a Cortex timer: page 1 ≥ 15 s, then alternate every 12 s; every rotation is just another `render` with the same `cardId`, higher `seq`.
+**D13 rules are enforced here:** single-flight (frames dropped while an identify/scan is in flight), stability (×2), cooldown map (companyId → timestamp), research-instead-of-silence below 0.25, no-match backoff map (orgHint → timestamp). Rotation is a Cortex timer: page 1 ≥ 5 s, then alternate every 12 s; every rotation is just another `render` with the same `cardId`, higher `seq`.
 
 ---
 
@@ -276,7 +281,7 @@ GET  /api/companies?q=stri                             → [ { "companyId", "nam
   "page": { "index": 1, "count": 2 },
   "streaming": false,
   "company": { "companyId": "stripe", "confidence": 0.93 },
-  "minDisplaySec": 15
+  "minDisplaySec": 5
 }
 ```
 
@@ -317,7 +322,7 @@ Modules, each an interface + one implementation + `// INTEGRATION:` block:
 |---|---|---|
 | `DeviceGateway` | WS hub, auth by deviceToken | Hosts `MockDeviceAdapter`: replays a canned frame sequence from `cortex/fixtures/` (a walk-up to a printed banner, then a pamphlet close-up) — the whole pipeline is testable with zero hardware from hour 3 |
 | `SceneGate` | frame in → `{class, orgHint}` out | opus-5 vision at effort low (`GATE_MODEL` overrides), structured output, cached system prompt. Owns the stability tracker (×2), single-flight latch, and cooldown map (D13) |
-| `IdentifyService` | `Identifier` | `VisionCorpusIdentifier`: opus-5, frame + corpus name/alias list **in the system prompt** (cache-stable), effort `low`, structured output → `{corpusId?, nameGuess?, confidence}`. < 0.6 → silence (log to dashboard). Override sets it directly |
+| `IdentifyService` | `Identifier` | `VisionCorpusIdentifier`: opus-5, frame + corpus name/alias list **in the system prompt** (cache-stable), effort `low`, structured output → `{corpusId?, nameGuess?, confidence}`. < 0.25, or no `corpusId`, → research the name on the live path (log to dashboard). Override sets it directly |
 | `ContextService` | `ContextProvider` | `CorpusProvider` (Postgres lookup → **pre-generated card**, instant) → miss → `LiveSearchProvider` (Tavily + opus-5 condense to card schema, streamed, cached back into DB) |
 | `PitchService` | profile + company record → pitch page | opus-5 streaming, structured to card line limits; auto-invoked on every successful identification |
 | `ScanService` | doc photo → extraction → merge | opus-5 vision, structured (`roles/deadlines/lines`); merges into current card set or renders standalone `kind:"scan"` |
@@ -382,7 +387,7 @@ Scripts (run locally, write to Supabase): `ingest-csv.ts` (P3 maintains `compani
 | **Camera stream + display on one `DeviceSession` is undocumented** — the one assumption docs can't verify | Hour-zero hardware spike (§5.1) + pre-agreed cut line (§6). This replaces v1's generic "DAT is a preview" hand-wringing with the actual falsifiable question |
 | **DAT is a developer preview** — possible instability | Auto-reconnect everywhere; phone mode is a complete fallback product, not a stub |
 | **Battery: continuous camera streaming** (~45–75 min/charge, unverified) | **Accepted cost (D14)** — arm per demo run, charger in pocket, measure at M2, cadence-drop cut line |
-| **Card spam / gate misfires** while walking the aisle | D13 churn rules (stability ×2, single-flight, 10-min cooldown, silence < 0.6); tunable constants; override as final authority |
+| **Card spam / gate misfires** while walking the aisle | D13 churn rules (stability ×2, single-flight, 1-min cooldown, 20 s no-match backoff); tunable constants; override as final authority |
 | **Misidentification** (similar banners, partial views) | Corpus alias list constrains identify output to real candidates; confidence gate; sub-threshold attempts visible in dashboard feed → operator overrides |
 | **Venue Wi-Fi** | Everything over the internet (no LAN assumptions); demo on phone hotspot; hotspot dress rehearsal at M3 |
 | **Anthropic rate limits** (gate runs ~34 calls/min) | Haiku traffic is tiny; retries with backoff; refusal fallbacks on opus-5; pre-generated corpus cards mean the hot path needs only gate + identify; if limits bite, on-phone Vision-OCR gate is the known fallback (deliberately not built unless needed) |
@@ -489,7 +494,7 @@ All LLM calls use `output_config.format` with these schemas (`strict` semantics:
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 } },
   "required": ["corpusId", "nameGuess", "confidence"] }
 ```
-`corpusId` must be from the provided list or null; null + `nameGuess` → Tavily path; confidence < 0.6 → silence (D13).
+`corpusId` must be from the provided list or null; null + `nameGuess` → Tavily path; confidence < 0.25 → research that name rather than trust the id (D13).
 
 **C3 · Summary card** (used by `enrich.ts` pre-generation AND the Tavily live path — one schema, one prompt):
 
@@ -529,15 +534,17 @@ export const FRAME_INTERVAL_MS   = 1750;  // device sampling cadence
 export const FRAME_MAX_EDGE_PX   = 768;   // frame downscale (JPEG q ≈ 0.6)
 export const DOC_MAX_EDGE_PX     = 2048;  // document photo (JPEG q ≈ 0.8)
 export const STABILITY_N         = 2;     // consecutive gate hits before acting
-export const COOLDOWN_MIN        = 10;    // per-company re-identify suppression
-export const CONF_THRESHOLD      = 0.6;   // below → silence on lens, log to dashboard
+export const COOLDOWN_MIN        = 1;     // per-company re-identify suppression — a booth revisit inside a demo should re-fire
+export const CONF_THRESHOLD      = 0.25;  // below → research the name (live path), don't trust the corpus guess
 export const RENDER_MIN_GAP_MS   = 500;   // GlassBridge full-screen-replace coalescing
-export const PAGE1_MIN_SEC       = 15;    // summary page hold before first rotation
+export const PAGE1_MIN_SEC       = 5;     // summary hold before rotation AND before a different company may replace it
 export const ROTATE_SEC          = 12;    // page alternation interval
+export const NO_MATCH_BACKOFF_SEC = 20;   // after no_match/search_down/timeout: same orgHint is not re-identified
 // per-stage timeouts → degraded card, never a hang:
-export const T_GATE_MS     = 4000;
+export const T_GATE_MS     = 8000;  // opus-5 gate p90 overran 4000 and a timed-out frame scores "nothing"
 export const T_IDENTIFY_MS = 5000;
-export const T_SEARCH_MS   = 4000;
+export const T_SEARCH_MS   = 8000;  // Tavily REST leg (4000 could not fit Tavily + condense)
+export const T_RESEARCH_MS = 15000; // whole live path (Tavily → opus condense), behind the "Researching…" card
 export const T_PITCH_MS    = 10000;
 export const T_PHOTO_MS    = 5000;
 ```

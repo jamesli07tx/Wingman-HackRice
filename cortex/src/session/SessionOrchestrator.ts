@@ -25,11 +25,13 @@ import type {
 } from "@wingman/shared";
 import {
   CONF_THRESHOLD,
+  NO_MATCH_BACKOFF_SEC,
   PAGE1_MIN_SEC,
   ROTATE_SEC,
   T_IDENTIFY_MS,
   T_PHOTO_MS,
   T_PITCH_MS,
+  T_RESEARCH_MS,
   T_SEARCH_MS,
   deviceConfig,
 } from "@wingman/shared";
@@ -104,6 +106,8 @@ interface Session {
   card: CardSet | null;
   pendingPhoto: { reqId: string; timer: ReturnType<typeof setTimeout> } | null;
   rotationTimer: ReturnType<typeof setTimeout> | null;
+  /** D13 no-match backoff: gate orgHint key -> epoch ms until re-identify is allowed. */
+  backoff: Map<string, number>;
   lastGateErrorAt: number;
   closed: boolean;
 }
@@ -273,6 +277,22 @@ export class SessionOrchestrator implements OrchestratorApi {
     }
 
     if (det.class === "banner") {
+      // D13 no-match backoff: the gate keeps calling this a banner but identify
+      // could not resolve it. Without this the lens loops ack -> hint -> ack for
+      // as long as the wearer keeps looking at it. No ack, no hint, no LLM call.
+      const heldMs = this.#backoffLeftMs(s, det.orgHint);
+      if (heldMs > 0) {
+        const key = backoffKey(det.orgHint);
+        this.#log.info("identify backoff", { sessionId, orgHint: key, leftMs: heldMs });
+        this.deps.dashboard.emit({
+          type: "status",
+          sessionId,
+          note: `identify backoff (${key}) ${Math.ceil(heldMs / 1000)} s`,
+        });
+        this.deps.gate.flightDone(sessionId);
+        return;
+      }
+
       // Replace-on-change guard (D11/D13): a presented set holds the lens for
       // PAGE1_MIN_SEC before a different company may replace it.
       if (s.card && this.#now() - s.card.shownAt < PAGE1_MIN_SEC * 1000) {
@@ -301,6 +321,7 @@ export class SessionOrchestrator implements OrchestratorApi {
       card: null,
       pendingPhoto: null,
       rotationTimer: null,
+      backoff: new Map(),
       lastGateErrorAt: 0,
       closed: false,
     };
@@ -343,7 +364,7 @@ export class SessionOrchestrator implements OrchestratorApi {
 
   async #runIdentify(s: Session, det: StableDetection): Promise<void> {
     s.state = "IDENTIFYING";
-    this.#renderAck(s, det.orgHint);
+    const cardId = this.#renderAck(s, det.orgHint);
     try {
       const identified = await withDeadline(this.deps.identifier.identify(det.jpeg), T_IDENTIFY_MS);
       if (s.closed) return;
@@ -354,48 +375,71 @@ export class SessionOrchestrator implements OrchestratorApi {
           "Still looking",
           ["Could not read that banner", "Move a little closer"],
         );
+        this.#startBackoff(s, det.orgHint);
         s.state = "ARMED";
         return;
       }
 
       const result = identified.value;
       if (result.confidence < CONF_THRESHOLD) {
-        // D13 silence: an automatic system never asks the wearer a question.
-        // Nothing more reaches the lens; the operator sees it and may override.
+        // D13: the operator still sees the doubt on the feed. The lens no longer
+        // goes silent for it — a name we can research beats showing nothing.
         this.deps.dashboard.emit({
           type: "silenced_identify",
           sessionId: s.sessionId,
           nameGuess: result.nameGuess,
           confidence: result.confidence,
         });
-        s.state = s.card ? "PRESENTING" : "ARMED";
-        return;
       }
 
+      // Unsure = no corpus hit, or a corpus guess below the bar. Either way the
+      // live research path owns it (ContextService: exact row -> Tavily -> condense),
+      // behind its own card because it is seconds, not milliseconds.
+      const unsure = result.corpusId === null || result.confidence < CONF_THRESHOLD;
+      const name = result.nameGuess?.trim() || det.orgHint?.trim() || null;
+      if (unsure && !name) {
+        // Nothing to research with: no corpus id, no name, no orgHint.
+        this.#degrade(s, "no_match", "No match", ["Nothing readable on that banner"]);
+        this.#startBackoff(s, det.orgHint);
+        s.state = "ARMED";
+        return;
+      }
+      if (unsure && name) this.#renderResearching(s, cardId, name);
+
       const resolved = await withDeadline(
-        this.deps.context.resolve({ corpusId: result.corpusId, nameGuess: result.nameGuess }),
-        T_SEARCH_MS,
+        this.deps.context.resolve(
+          unsure
+            ? { corpusId: null, nameGuess: name }
+            : { corpusId: result.corpusId, nameGuess: result.nameGuess },
+        ),
+        unsure ? T_RESEARCH_MS : T_SEARCH_MS,
       );
       if (s.closed) return;
       if (resolved.kind !== "ok") {
-        this.#degrade(s, resolved.kind === "timeout" ? "search_down" : "llm_down", "Pulling details", [
-          result.nameGuess ?? "That company",
+        // A thrown resolve means the search backend itself is unusable (dead
+        // Tavily key, HTTP error) — say search_down, not "no match".
+        const why = resolved.kind === "timeout" ? "timeout" : errText(resolved.error);
+        this.deps.dashboard.emit({ type: "status", sessionId: s.sessionId, note: `search_down: ${why}` });
+        this.#degrade(s, "search_down", "Pulling details", [
+          name ?? "That company",
           "Details are taking a moment",
         ]);
+        this.#startBackoff(s, det.orgHint);
         s.state = "ARMED";
         return;
       }
       if (resolved.value === null) {
         this.#degrade(s, "no_match", "No match", [
-          result.nameGuess ? `Nothing found for ${result.nameGuess}` : "Nothing found for that banner",
+          name ? `Nothing found for ${name}` : "Nothing found for that banner",
         ]);
+        this.#startBackoff(s, det.orgHint);
         s.state = "ARMED";
         return;
       }
 
       const ctx = resolved.value;
       if (s.card && s.card.companyId === ctx.companyId) {
-        // Same company again — suppressed (the 10-min cooldown owns this).
+        // Same company again — suppressed (the COOLDOWN_MIN cooldown owns this).
         this.deps.gate.startCooldown(s.sessionId, ctx.companyId);
         s.state = "PRESENTING";
         return;
@@ -410,6 +454,26 @@ export class SessionOrchestrator implements OrchestratorApi {
     } finally {
       this.deps.gate.flightDone(s.sessionId);
     }
+  }
+
+  /** ms left on the no-match backoff for this gate orgHint (0 = free to identify). */
+  #backoffLeftMs(s: Session, orgHint: string | null): number {
+    const key = backoffKey(orgHint);
+    const until = s.backoff.get(key);
+    if (until === undefined) return 0;
+    const left = until - this.#now();
+    if (left <= 0) {
+      s.backoff.delete(key);
+      return 0;
+    }
+    return left;
+  }
+
+  /** Keyed on the GATE's orgHint, not identify's nameGuess: that string is the
+   *  only thing the next stable detection carries, so it is the only key that
+   *  can suppress the loop. A different banner is unaffected. */
+  #startBackoff(s: Session, orgHint: string | null): void {
+    s.backoff.set(backoffKey(orgHint), this.#now() + NO_MATCH_BACKOFF_SEC * 1000);
   }
 
   // -------------------------------------------------------------------------
@@ -560,9 +624,11 @@ export class SessionOrchestrator implements OrchestratorApi {
   // Rendering
   // -------------------------------------------------------------------------
 
-  #renderAck(s: Session, orgHint: string | null): void {
+  /** Returns the cardId so the research card can replace it in place. */
+  #renderAck(s: Session, orgHint: string | null): string {
+    const cardId = `c_${++this.#cardCounter}`;
     const card: HudCard = {
-      cardId: `c_${++this.#cardCounter}`,
+      cardId,
       seq: 1,
       kind: "ack",
       title: "Identifying…",
@@ -571,6 +637,21 @@ export class SessionOrchestrator implements OrchestratorApi {
       streaming: true,
     };
     this.#send(s, card);
+    return cardId;
+  }
+
+  /** The live research path costs seconds (Tavily + condense) — say so instead
+   *  of holding "Identifying…" until T_RESEARCH_MS. */
+  #renderResearching(s: Session, cardId: string, name: string): void {
+    this.#send(s, {
+      cardId,
+      seq: 2,
+      kind: "ack",
+      title: "Researching…",
+      subtitle: clamp(name, 48),
+      lines: [clamp(`Looking up ${name}`, 40)],
+      footer: "Wingman",
+    });
   }
 
   #renderCard(s: Session, card: CardSet): void {
@@ -656,6 +737,14 @@ export class SessionOrchestrator implements OrchestratorApi {
   deviceTypeOf(sessionId: string): DeviceType | null {
     return this.#sessions.get(sessionId)?.channel.deviceType ?? null;
   }
+}
+
+function backoffKey(orgHint: string | null): string {
+  return orgHint?.trim().toLowerCase() || "*";
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function clamp(text: string, max: number): string {

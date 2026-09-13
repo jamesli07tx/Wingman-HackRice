@@ -3,6 +3,7 @@
 // the Anthropic helper module is mocked wholesale.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { COOLDOWN_MIN, T_GATE_MS } from "@wingman/shared";
 import type { GateResult } from "@wingman/shared";
 
 const { gateClassify } = vi.hoisted(() => ({ gateClassify: vi.fn() }));
@@ -161,7 +162,7 @@ describe("SceneGate — single-flight latch", () => {
   });
 });
 
-describe("SceneGate — cooldown map (COOLDOWN_MIN = 10)", () => {
+describe("SceneGate — cooldown map (Appendix D COOLDOWN_MIN)", () => {
   it("records a cooldown the orchestrator can consult, and expires it", () => {
     let clock = 1_000_000;
     const { gate } = harness({ now: () => clock });
@@ -169,12 +170,12 @@ describe("SceneGate — cooldown map (COOLDOWN_MIN = 10)", () => {
     expect(gate.isCooledDown("s1", "stripe")).toBe(false);
     gate.startCooldown("s1", "stripe");
     expect(gate.isCooledDown("s1", "stripe")).toBe(true);
-    expect(gate.cooldownRemainingMs("s1", "stripe")).toBe(10 * 60_000);
+    expect(gate.cooldownRemainingMs("s1", "stripe")).toBe(COOLDOWN_MIN * 60_000);
 
-    clock += 9 * 60_000;
+    clock += COOLDOWN_MIN * 60_000 - 1_000;
     expect(gate.isCooledDown("s1", "stripe")).toBe(true);
 
-    clock += 61_000; // past 10 minutes
+    clock += 1_000; // past COOLDOWN_MIN
     expect(gate.isCooledDown("s1", "stripe")).toBe(false);
     expect(gate.cooldownRemainingMs("s1", "stripe")).toBe(0);
   });
@@ -213,7 +214,7 @@ describe("SceneGate — T_GATE_MS timeout", () => {
       const { gate, telemetry, detections, notes } = harness();
 
       const pending = gate.onFrame("s1", 1, FRAME);
-      await vi.advanceTimersByTimeAsync(4001);
+      await vi.advanceTimersByTimeAsync(T_GATE_MS + 1);
       await pending;
 
       expect(telemetry).toEqual([{ sessionId: "s1", seq: 1, result: { class: "nothing", orgHint: null } }]);
@@ -285,15 +286,15 @@ describe("SceneGate — gate_debug feed", () => {
       const { gate, debug } = harness();
 
       const pending = gate.onFrame("s1", 1, FRAME);
-      await vi.advanceTimersByTimeAsync(4001);
+      await vi.advanceTimersByTimeAsync(T_GATE_MS + 1);
       await pending;
 
       expect(debug).toHaveLength(1);
       expect(debug[0].d).toMatchObject({
         rawResponse: null,
         stopReason: null,
-        latencyMs: 4000,
-        error: "gate timeout after 4000ms",
+        latencyMs: T_GATE_MS,
+        error: `gate timeout after ${T_GATE_MS}ms`,
         result: null,
       });
       expect(debug[0].d.systemPrompt).toBe(GATE_SYSTEM_PROMPT);

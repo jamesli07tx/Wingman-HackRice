@@ -264,7 +264,7 @@ enum DashboardEvent: Decodable, Equatable {
   case unknown(type: String)
 
   /// shared/src/constants.ts CONF_THRESHOLD — under this the lens silences an identification (D13).
-  static let confThreshold = 0.6
+  static let confThreshold = 0.25
 
   private enum Key: String, CodingKey {
     case type, sessionId, card, battery, note, frameSeq, `class`, orgHint, nameGuess, confidence, state, reason
