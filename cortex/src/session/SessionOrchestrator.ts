@@ -366,6 +366,9 @@ export class SessionOrchestrator implements OrchestratorApi {
 
   async #runIdentify(s: Session, det: StableDetection): Promise<void> {
     s.state = "IDENTIFYING";
+    // The previous set's page rotation must not fire while Identifying…/Researching… holds the lens —
+    // it re-rendered the OLD company over the new search. Resumed only on the keep-the-old-card paths.
+    this.#clearRotation(s);
     const cardId = this.#renderAck(s, det.orgHint);
     try {
       const identified = await withDeadline(this.deps.identifier.identify(det.jpeg), T_IDENTIFY_MS);
@@ -444,13 +447,13 @@ export class SessionOrchestrator implements OrchestratorApi {
       if (s.card && s.card.companyId === ctx.companyId) {
         // Same company again — suppressed (the COOLDOWN_MIN cooldown owns this).
         this.deps.gate.startCooldown(s.sessionId, ctx.companyId);
-        s.state = "PRESENTING";
+        this.#resumeCard(s);
         return;
       }
       if (this.deps.gate.isCooledDown?.(s.sessionId, ctx.companyId)) {
         // D13: company A stays suppressed for COOLDOWN_MIN even after the card
         // moved on to company B — drop the detection silently.
-        s.state = s.card ? "PRESENTING" : "ARMED";
+        this.#resumeCard(s);
         return;
       }
       this.#present(s, ctx, result.confidence);
@@ -528,6 +531,19 @@ export class SessionOrchestrator implements OrchestratorApi {
     };
     this.#log.warn("pitch unavailable", { sessionId: s.sessionId, kind: pitched.kind, err: pitched.kind === "error" ? String((pitched as { error?: unknown }).error ?? "") : undefined });
     this.#sendError(s, "llm_down", "pitch unavailable");
+  }
+
+  /** Identify ended without a new set: put the current card back on the lens (the ack covered it) and
+   *  restart its rotation; with no card at all this is a plain return to ARMED. */
+  #resumeCard(s: Session): void {
+    const card = s.card;
+    if (!card) {
+      s.state = "ARMED";
+      return;
+    }
+    s.state = "PRESENTING";
+    this.#renderCard(s, card);
+    if (card.pages === 2) this.#scheduleRotation(s, card, ROTATE_SEC * 1000);
   }
 
   #scheduleRotation(s: Session, card: CardSet, delayMs: number): void {
@@ -681,7 +697,7 @@ export class SessionOrchestrator implements OrchestratorApi {
   /** Degraded hint/error card — a stage missed its deadline; the lens never hangs. */
   #degrade(s: Session, code: ErrorCode, title: string, lines: string[]): void {
     this.#sendError(s, code, title);
-    if (code === "identify_timeout" || code === "no_match" || code === "search_down") {
+    if (code === "identify_timeout" || code === "llm_down" || code === "no_match" || code === "search_down") {
       // IDENTIFYING failures drop back to a clean ARMED (DESIGN.md §3.3).
       this.#clearRotation(s);
       s.card = null;

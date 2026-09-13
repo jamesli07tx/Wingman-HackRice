@@ -342,6 +342,29 @@ describe("SessionOrchestrator", () => {
     });
   });
 
+  it("the previous card never rotates back over Researching… while a new identify is in flight", async () => {
+    const h = harness();
+    const sessionId = await arm(h);
+    h.orch.onDetection(sessionId, banner());
+    await vi.advanceTimersByTimeAsync(PAGE1_MIN_SEC * 1000 + ROTATE_SEC * 1000); // stripe 1/2 → 2/2 → 1/2, rotating
+
+    let finish!: (ctx: ReturnType<typeof companyContext>) => void;
+    h.identify.mockResolvedValueOnce({ corpusId: null, nameGuess: "Ramp", confidence: CONF_THRESHOLD - 0.01 });
+    h.resolve.mockReturnValueOnce(new Promise((r) => (finish = r)));
+    h.orch.onDetection(sessionId, banner("Ramp"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.channel.cards().at(-1)).toMatchObject({ kind: "ack", title: "Researching…", subtitle: "Ramp" });
+    const during = h.channel.cards().length;
+
+    // A full rotation period passes while the research is out (inside T_RESEARCH_MS) — nothing else may be rendered.
+    await vi.advanceTimersByTimeAsync(ROTATE_SEC * 1000 + 1000);
+    expect(h.channel.cards()).toHaveLength(during);
+
+    finish(companyContext("ramp"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.channel.cards().at(-1)).toMatchObject({ kind: "company", title: "ramp" });
+  });
+
   it("unsure with no name anywhere: hint + backoff, nothing to research", async () => {
     const h = harness();
     const sessionId = await arm(h);
@@ -471,8 +494,9 @@ describe("SessionOrchestrator", () => {
     h.orch.onDetection(sessionId, banner());
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(h.channel.cards().filter((c) => c.kind === "company")).toHaveLength(2); // page1 + rotation only
-    expect(h.channel.cards().length).toBe(before + 1); // just the ack
+    // page1 + rotation + the resumed card (the ack covered the lens; rotation was paused for the identify)
+    expect(h.channel.cards().filter((c) => c.kind === "company")).toHaveLength(3);
+    expect(h.channel.cards().length).toBe(before + 2); // ack, then the same card back
     expect(h.gate.cooldowns.map((c) => c.companyId)).toEqual(["stripe", "stripe"]);
     expect(h.orch.stateOf(sessionId)).toBe("PRESENTING");
   });
