@@ -25,6 +25,7 @@ let package = Package(
         "RootView.swift",
         "WelcomeView.swift",
         "ProfileView.swift",
+        "FairView.swift",
         "GlassesView.swift",
         "SessionView.swift",
         "FeedView.swift",

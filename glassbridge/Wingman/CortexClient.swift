@@ -16,6 +16,30 @@
 
 import Foundation
 
+/// cortex/src/fairs/types.ts FairImport — only the fields the app shows.
+struct FairImport: Decodable, Equatable {
+  struct Company: Decodable, Equatable, Identifiable {
+    let name: String
+    let companyId: String?
+    let status: String   // pending | matched | enriched | failed
+    let note: String?
+    var id: String { name }
+  }
+  let importId: String
+  let fairName: String
+  let source: String
+  let sourceRef: String
+  let status: String     // enriching | done | failed
+  let companies: [Company]
+  let done: Int
+  let total: Int
+  let reloaded: Bool
+  let corpusSize: Int?
+  let error: String?
+  var finished: Bool { status != "enriching" }
+}
+struct FairImportEnvelope: Decodable { let `import`: FairImport }
+
 enum CortexError: Error, LocalizedError {
   case http(Int, String)
   case transport(Error)
@@ -73,6 +97,43 @@ struct CortexClient {
 
   func devices() async throws -> [DeviceInfo] {
     try decode(await send(authorized(request("api/devices", "GET"))))
+  }
+
+  // MARK: fair import (cortex/src/fairs/routes.ts — same Clerk bearer)
+
+  func startFairImport(url: String, fairName: String?) async throws -> FairImport {
+    var r = try await authorized(request("api/fairs/imports/link", "POST"))
+    r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    r.httpBody = try JSONSerialization.data(withJSONObject: ["url": url, "fairName": fairName ?? ""].filter { !$0.value.isEmpty })
+    let env: FairImportEnvelope = try decode(await send(r))
+    return env.import
+  }
+
+  /// `fairName` goes BEFORE the file part — the route reads text fields that precede the file.
+  func startFairImport(image: Data, filename: String, contentType: String, fairName: String?) async throws -> FairImport {
+    var r = try await authorized(request("api/fairs/imports/image", "POST"))
+    let boundary = "wingman-\(UUID().uuidString)"
+    r.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+    var body = Data()
+    if let fairName, !fairName.isEmpty {
+      body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"fairName\"\r\n\r\n\(fairName)\r\n".utf8))
+    }
+    body.append(Self.multipart(boundary: boundary, name: "file", filename: filename, contentType: contentType, file: image))
+    r.httpBody = body
+    r.timeoutInterval = 90   // one opus extraction of the roster image happens before the 202
+    let env: FairImportEnvelope = try decode(await send(r))
+    return env.import
+  }
+
+  func fairImport(id: String) async throws -> FairImport {
+    let env: FairImportEnvelope = try decode(await send(authorized(request("api/fairs/imports/\(id)", "GET"))))
+    return env.import
+  }
+
+  func fairImports() async throws -> [FairImport] {
+    struct Env: Decodable { let imports: [FairImport] }
+    let env: Env = try decode(await send(authorized(request("api/fairs/imports", "GET"))))
+    return env.imports
   }
 
   // MARK: plumbing

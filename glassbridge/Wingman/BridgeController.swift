@@ -306,6 +306,53 @@ final class BridgeController: ObservableObject {
     }
   }
 
+  // MARK: fair list import (pre-fair: research every listed company into the corpus)
+
+  @Published private(set) var fairImport: FairImport?
+  @Published private(set) var fairBusy = false
+  @Published var fairStatus: String?
+
+  func startFairImport(link: String, fairName: String) async {
+    await runFairImport(fairName: fairName) { cortex in
+      try await cortex.startFairImport(url: link, fairName: fairName)
+    }
+  }
+
+  func startFairImport(image: Data, filename: String, contentType: String, fairName: String) async {
+    await runFairImport(fairName: fairName) { cortex in
+      try await cortex.startFairImport(image: image, filename: filename, contentType: contentType, fairName: fairName)
+    }
+  }
+
+  private func runFairImport(fairName: String, _ start: (CortexClient) async throws -> FairImport) async {
+    guard accountReady else { fairStatus = "Sign in first"; return }
+    fairBusy = true
+    defer { fairBusy = false }
+    fairStatus = "Reading the list…"
+    do {
+      var imp = try await start(cortex)
+      fairImport = imp
+      // ponytail: poll every 2 s until done; the route has no push channel and imports take ~30 s.
+      while !imp.finished {
+        try await Task.sleep(nanoseconds: 2_000_000_000)
+        imp = try await cortex.fairImport(id: imp.importId)
+        fairImport = imp
+        fairStatus = "Researching \(imp.done)/\(imp.total)…"
+      }
+      fairStatus = imp.status == "done"
+        ? "Done: \(imp.companies.filter { $0.status == "enriched" }.count) researched, \(imp.companies.filter { $0.status == "matched" }.count) already on file\(imp.reloaded ? " · glasses updated" : "")"
+        : "Import failed: \(imp.error ?? "unknown")"
+    } catch {
+      fairStatus = error.localizedDescription
+    }
+  }
+
+  /// Latest import on the server (another phone or the console may have started one).
+  func refreshFairImport() async {
+    guard accountReady, !fairBusy else { return }
+    if let latest = try? await cortex.fairImports().first { fairImport = latest }
+  }
+
   func saveLinks() async {
     guard accountReady else { profileStatus = "Sign in first"; return }
     profileBusy = true
