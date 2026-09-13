@@ -15,7 +15,7 @@
 
 import Foundation
 
-final class DashboardSocket: NSObject, URLSessionWebSocketDelegate {
+final class DashboardSocket {
   enum State: Equatable { case disconnected, connecting, connected }
 
   var onEvent: ((DashboardEvent) -> Void)?
@@ -27,21 +27,20 @@ final class DashboardSocket: NSObject, URLSessionWebSocketDelegate {
   private let url: URL
   private let tokenProvider: () async throws -> String
   private let q = DispatchQueue(label: "wingman.dashboardsocket")
-  /// URLSession retains its delegate (us) until invalidated — created lazily, invalidated in
-  /// disconnect()/deinit, or every socket and its reconnect loop leaks forever (same as CortexSocket).
-  private var session: URLSession?
-  private var task: URLSessionWebSocketTask?
+  private let policy: WSTransport.Policy
+  private var task: WSTransport?
   private var shouldRun = false
   /// A token fetch is in flight — without this a second open() would mint a second socket.
   private var opening = false
   private var attempts = 0
 
-  init(url: URL, tokenProvider: @escaping () async throws -> String) {
+  init(url: URL, tokenProvider: @escaping () async throws -> String, policy: WSTransport.Policy = .any) {
+    self.policy = policy
     self.url = url
     self.tokenProvider = tokenProvider
   }
 
-  deinit { session?.invalidateAndCancel() }
+  deinit { task?.cancel() }
 
   // MARK: public (thread-safe)
 
@@ -52,8 +51,6 @@ final class DashboardSocket: NSObject, URLSessionWebSocketDelegate {
       self.shouldRun = false
       self.attempts = 0
       self.teardown()
-      self.session?.invalidateAndCancel()
-      self.session = nil
       self.set(.disconnected)
     }
   }
@@ -87,42 +84,31 @@ final class DashboardSocket: NSObject, URLSessionWebSocketDelegate {
     var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)!
     comps.queryItems = [URLQueryItem(name: "token", value: token)]
     guard let dialed = comps.url else { return }
-    let s = session ?? URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-    session = s
-    let t = s.webSocketTask(with: dialed)
+    // WSTransport bounds the handshake itself (a hotspot/CloudFront hiccup can leave an upgrade pending).
+    let t = WSTransport(url: dialed, queue: q, policy: policy, attempt: attempts)
     task = t
-    t.resume()
-    receiveLoop(t)
-    // Handshake deadline: a CloudFront/hotspot hiccup can leave the upgrade pending well past our patience.
-    q.asyncAfter(deadline: .now() + 20) { [weak self] in
-      guard let self, self.task === t, self.state != .connected else { return }
-      NSLog("DashboardSocket: handshake timed out")
+    t.onOpen = { [weak self] in
+      guard let self, self.task === t else { return }
+      self.attempts = 0
+      self.set(.connected)
+      self.startKeepalive()
+    }
+    t.onText = { [weak self] text in
+      guard let self, self.task === t else { return }
+      if let event = try? Wire.decodeDashboard(text) { DispatchQueue.main.async { self.onEvent?(event) } }
+      else { NSLog("DashboardSocket: undecodable event: \(text.prefix(120))") }
+    }
+    t.onClose = { [weak self] err in
+      guard let self, self.task === t else { return }
+      if let err { NSLog("DashboardSocket: closed (cellularOnly=\(t.cellularOnly)): \(err)") }
       self.fail(t)
     }
-  }
-
-  private func receiveLoop(_ t: URLSessionWebSocketTask) {
-    t.receive { [weak self] result in
-      guard let self else { return }
-      self.q.async {
-        guard self.task === t else { return }
-        switch result {
-        case .success(let m):
-          if case .string(let s) = m {
-            if let event = try? Wire.decodeDashboard(s) { DispatchQueue.main.async { self.onEvent?(event) } }
-            else { NSLog("DashboardSocket: undecodable event: \(s.prefix(120))") }
-          }
-          self.receiveLoop(t)
-        case .failure:
-          self.fail()
-        }
-      }
-    }
+    t.start()
   }
 
   /// `t`, when given, is the task the error came from: a stale task's late failure must never kill
   /// the healthy newer connection that replaced it.
-  private func fail(_ t: URLSessionWebSocketTask? = nil) {
+  private func fail(_ t: WSTransport? = nil) {
     guard let current = task else { return }
     if let t, t !== current { return }
     teardown()
@@ -132,7 +118,7 @@ final class DashboardSocket: NSObject, URLSessionWebSocketDelegate {
 
   private func teardown() {
     keepalive?.cancel(); keepalive = nil
-    task?.cancel(with: .goingAway, reason: nil)
+    task?.cancel()
     task = nil
   }
 
@@ -144,7 +130,7 @@ final class DashboardSocket: NSObject, URLSessionWebSocketDelegate {
     t.schedule(deadline: .now() + 20, repeating: 20)
     t.setEventHandler { [weak self] in
       guard let self, let task = self.task else { return }
-      task.sendPing { [weak self] err in if err != nil { self?.q.async { self?.fail(task) } } }
+      task.ping { [weak self] err in if err != nil { self?.fail(task) } }
     }
     t.resume()
     keepalive = t
@@ -163,25 +149,6 @@ final class DashboardSocket: NSObject, URLSessionWebSocketDelegate {
     DispatchQueue.main.async { self.onState?(s) }
   }
 
-  // MARK: URLSessionWebSocketDelegate (called on URLSession's queue → hop to q)
-
-  func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-    q.async {
-      guard webSocketTask === self.task else { return }
-      self.attempts = 0
-      self.set(.connected)
-      self.startKeepalive()
-    }
-  }
-
-  func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
-                  didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-    q.async { guard webSocketTask === self.task else { return }; self.fail() }
-  }
-
-  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-    q.async { guard task === self.task else { return }; self.fail() }
-  }
 }
 
 /// Race an async operation against a deadline; throws `DeadlineError` when the deadline wins.

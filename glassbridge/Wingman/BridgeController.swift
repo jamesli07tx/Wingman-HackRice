@@ -469,7 +469,7 @@ final class BridgeController: ObservableObject {
     cortexHint = nil
     guard cortexConfigured else { cortexHint = "Set the Cortex URL first"; return }
     guard case .linked = linkState, let token = Keychain.get(Keychain.deviceTokenKey) else { return }
-    let s = CortexSocket(url: wsURL, token: token)
+    let s = CortexSocket(url: wsURL, token: token, policy: .cellularFirst)   // the hotspot Wi-Fi has no internet
     s.onState = { [weak self] st in self?.socketState = st }
     s.onMessage = { [weak self] m in self?.handle(m) }
     s.batteryProvider = { [battery] in battery.read() }   // heartbeat runs on the socket's queue, never on main
@@ -540,7 +540,7 @@ final class BridgeController: ObservableObject {
     dashboard?.disconnect(); dashboard = nil
     dashboardState = .disconnected
     guard auth.isSignedIn, Config.isCortexConfigured, let url = Self.dashboardURL else { return }
-    let d = DashboardSocket(url: url, tokenProvider: { [auth] in try await auth.token() })
+    let d = DashboardSocket(url: url, tokenProvider: { [auth] in try await auth.token() }, policy: .cellularFirst)
     d.onState = { [weak self] s in self?.dashboardState = s }
     d.onEvent = { [weak self] e in self?.handleDashboard(e) }
     d.connect()

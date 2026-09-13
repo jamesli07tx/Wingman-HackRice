@@ -19,6 +19,7 @@
 		439BCBEA8EA2A7A130F82AA0 /* ConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45D346CE90D2263A955B0548 /* ConfigTests.swift */; };
 		43D86622E8D523E13848D2B8 /* DashboardEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEDD7B164D2859EA41DFCF46 /* DashboardEventTests.swift */; };
 		46EC044005BE2F03E6908C61 /* DashboardSocketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6005F41AAD9ECDD5FBB4D399 /* DashboardSocketTests.swift */; };
+		57AC49F42614CE7B81DD8F12 /* WSTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88E87D63D59E47421DD82DD5 /* WSTransport.swift */; };
 		5991DB0D1B49D041A4AB1F48 /* HudRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0B19928FD4A4A9D1E5BA67 /* HudRenderer.swift */; };
 		644749E5C2D9FD9134F00B15 /* HEVCFrameDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB6997088320169560A4446B /* HEVCFrameDecoder.swift */; };
 		6E327B0C3711E94CF987960A /* BridgeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */; };
@@ -78,6 +79,7 @@
 		67A6EAB01D39726A587B6D33 /* AuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthManager.swift; sourceTree = "<group>"; };
 		82BF2E26970C2A88BEA11D29 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		86E2FB8D175F61D4C454B1C4 /* HudRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HudRendererTests.swift; sourceTree = "<group>"; };
+		88E87D63D59E47421DD82DD5 /* WSTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WSTransport.swift; sourceTree = "<group>"; };
 		8BAA48A486D131CD46686C35 /* ProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolTests.swift; sourceTree = "<group>"; };
 		8C737FE37B02583D2DE6ABF0 /* FairView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FairView.swift; sourceTree = "<group>"; };
 		9133B46962B158E4F2E3A993 /* CortexSocketTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CortexSocketTests.swift; sourceTree = "<group>"; };
@@ -100,7 +102,7 @@
 		EEDD7B164D2859EA41DFCF46 /* DashboardEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardEventTests.swift; sourceTree = "<group>"; };
 		F2FE628C0697A064C96F62AF /* Wingman.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Wingman.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F7FB301A1D3DD9BFA2B8F778 /* BridgeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeController.swift; sourceTree = "<group>"; };
-		"TEMP_EFCFD16B-866A-4CF3-9061-5E1C94F65E8F" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		"TEMP_79CBC6D0-46C7-4677-A8B3-E055DA9536D5" /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -175,6 +177,7 @@
 				1A0D942987CAFF18817E75E1 /* SessionView.swift */,
 				59079017CB797CC1FD7934C1 /* Theme.swift */,
 				E926012BE836036C231BE0FE /* WelcomeView.swift */,
+				88E87D63D59E47421DD82DD5 /* WSTransport.swift */,
 			);
 			path = Wingman;
 			sourceTree = "<group>";
@@ -188,10 +191,10 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		"TEMP_65A8945F-DBC9-42A2-9A5D-F6036C07AF4F" /* glassbridge */ = {
+		"TEMP_37DC2375-62FB-475B-BD9C-13B17CAEACBC" /* glassbridge */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_EFCFD16B-866A-4CF3-9061-5E1C94F65E8F" /* Config.xcconfig */,
+				"TEMP_79CBC6D0-46C7-4677-A8B3-E055DA9536D5" /* Config.xcconfig */,
 			);
 			path = glassbridge;
 			sourceTree = "<group>";
@@ -324,6 +327,7 @@
 				CA0851CAD480B2847702EAA3 /* RootView.swift in Sources */,
 				111BBB9ADD042A734A76337A /* SessionView.swift in Sources */,
 				C4C7DF71DF3737ABF1EC8B58 /* Theme.swift in Sources */,
+				57AC49F42614CE7B81DD8F12 /* WSTransport.swift in Sources */,
 				012E3026E2F6EA212C1E5505 /* WelcomeView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -416,7 +420,7 @@
 		};
 		9D6513D9C82CCE7BD3D4DAB1 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_EFCFD16B-866A-4CF3-9061-5E1C94F65E8F" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_79CBC6D0-46C7-4677-A8B3-E055DA9536D5" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -481,7 +485,7 @@
 		};
 		DABFDCF87C106D2CAF6C5A18 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = "TEMP_EFCFD16B-866A-4CF3-9061-5E1C94F65E8F" /* Config.xcconfig */;
+			baseConfigurationReference = "TEMP_79CBC6D0-46C7-4677-A8B3-E055DA9536D5" /* Config.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;

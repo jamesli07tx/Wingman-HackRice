@@ -13,7 +13,7 @@
 
 import Foundation
 
-final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
+final class CortexSocket {
   enum State: Equatable { case disconnected, connecting, connected }
 
   var onMessage: ((CortexToDevice) -> Void)?
@@ -30,10 +30,8 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
   private let deviceType: DeviceType
   private let caps: DeviceCaps
   private let q = DispatchQueue(label: "wingman.cortexsocket")
-  /// URLSession retains its delegate (us) until invalidated — so it is created lazily in open() and
-  /// invalidated in disconnect()/deinit, otherwise every socket (and its reconnect loop) leaks forever.
-  private var session: URLSession?
-  private var task: URLSessionWebSocketTask?
+  private let policy: WSTransport.Policy
+  private var task: WSTransport?
   private var shouldRun = false
   private var attempts = 0
   private var everConnected = false
@@ -43,7 +41,8 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
   private(set) var framesDropped = 0
 
   init(url: URL, token: String, deviceType: DeviceType = .glassesBridge,
-       caps: DeviceCaps = DeviceCaps(video: true, photoHiRes: true)) {
+       caps: DeviceCaps = DeviceCaps(video: true, photoHiRes: true), policy: WSTransport.Policy = .any) {
+    self.policy = policy
     var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)!
     comps.queryItems = (comps.queryItems ?? []) + [URLQueryItem(name: "token", value: token)]
     self.url = comps.url!
@@ -51,13 +50,13 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
     self.caps = caps
   }
 
-  deinit { session?.invalidateAndCancel() }
+  deinit { task?.cancel() }
 
   // MARK: public (thread-safe)
 
   func connect() { q.async { self.shouldRun = true; self.open() } }
 
-  /// Full stop: no reconnect, no heartbeat, URLSession invalidated so it stops retaining us.
+  /// Full stop: no reconnect, no heartbeat, the transport cancelled.
   /// Backoff and the "reconnected" flag reset too — a later connect() is a fresh first connect.
   func disconnect() {
     q.async {
@@ -66,8 +65,6 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
       self.attempts = 0
       self.everConnected = false
       self.teardown()
-      self.session?.invalidateAndCancel()
-      self.session = nil
       self.set(.disconnected)
     }
   }
@@ -83,12 +80,20 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
   private func open() {
     guard shouldRun, task == nil else { return }
     set(.connecting)
-    let s = session ?? URLSession(configuration: .default, delegate: self, delegateQueue: nil)
-    session = s
-    let t = s.webSocketTask(with: url)
+    let t = WSTransport(url: url, queue: q, policy: policy, attempt: attempts)
     task = t
-    t.resume()
-    receiveLoop(t)
+    t.onOpen = { [weak self] in self?.didOpen(t) }
+    t.onText = { [weak self] text in
+      guard let self, self.task === t else { return }
+      if let msg = try? Wire.decode(text) { DispatchQueue.main.async { self.onMessage?(msg) } }
+      else { NSLog("CortexSocket: undecodable message: \(text.prefix(120))") }
+    }
+    t.onClose = { [weak self] err in
+      guard let self, self.task === t else { return }
+      if let err { NSLog("CortexSocket: closed (cellularOnly=\(t.cellularOnly)): \(err)") }
+      self.fail(t)
+    }
+    t.start()
   }
 
   /// Frames are ephemeral (DESIGN.md §8): when the socket is down they are dropped, never queued.
@@ -102,37 +107,16 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
       if frameInFlight { framesDropped += 1; return }
       frameInFlight = true
     }
-    t.send(.string(Wire.encode(msg))) { [weak self] err in
+    t.send(text: Wire.encode(msg)) { [weak self] err in
       guard let self else { return }
-      self.q.async {
-        if isFrame { self.frameInFlight = false }
-        if err != nil { self.fail(t) }
-      }
-    }
-  }
-
-  private func receiveLoop(_ t: URLSessionWebSocketTask) {
-    t.receive { [weak self] result in
-      guard let self else { return }
-      self.q.async {
-        guard self.task === t else { return }
-        switch result {
-        case .success(let m):
-          if case .string(let s) = m {
-            if let msg = try? Wire.decode(s) { DispatchQueue.main.async { self.onMessage?(msg) } }
-            else { NSLog("CortexSocket: undecodable message: \(s.prefix(120))") }
-          }
-          self.receiveLoop(t)
-        case .failure:
-          self.fail()
-        }
-      }
+      if isFrame { self.frameInFlight = false }
+      if err != nil { self.fail(t) }
     }
   }
 
   /// Tear down and retry. `t`, when given, is the task the error came from: a stale task's late failure
   /// must never kill the healthy newer connection that replaced it.
-  private func fail(_ t: URLSessionWebSocketTask? = nil) {
+  private func fail(_ t: WSTransport? = nil) {
     guard let current = task else { return }
     if let t, t !== current { return }
     teardown()
@@ -142,7 +126,7 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
 
   private func teardown() {
     heartbeat?.cancel(); heartbeat = nil
-    task?.cancel(with: .goingAway, reason: nil)
+    task?.cancel()
     task = nil
     frameInFlight = false
   }
@@ -167,37 +151,24 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
     timer.setEventHandler { [weak self] in
       guard let self, let t = self.task else { return }
       self.sendLocked(.status(battery: self.batteryProvider?(), note: nil))
-      t.sendPing { [weak self] err in
+      t.ping { [weak self] err in
         guard err != nil, let self else { return }
-        self.q.async { self.fail(t) }
+        self.fail(t)
       }
     }
     timer.resume()
     heartbeat = timer
   }
 
-  // MARK: URLSessionWebSocketDelegate (called on URLSession's queue → hop to q)
-
-  func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
-    q.async {
-      guard webSocketTask === self.task else { return }
-      let reconnected = self.everConnected
-      self.everConnected = true
-      self.attempts = 0
-      self.set(.connected)
-      self.sendLocked(.hello(deviceType: self.deviceType, caps: self.caps))
-      if self.wantsSession { self.sendLocked(.sessionStart) }
-      if reconnected { self.sendLocked(.status(battery: self.batteryProvider?(), note: "reconnected")) }
-      self.startHeartbeat()
-    }
-  }
-
-  func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
-                  didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
-    q.async { guard webSocketTask === self.task else { return }; self.fail() }
-  }
-
-  func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-    q.async { guard task === self.task else { return }; self.fail() }
+  private func didOpen(_ t: WSTransport) {
+    guard t === task else { return }
+    let reconnected = everConnected
+    everConnected = true
+    attempts = 0
+    set(.connected)
+    sendLocked(.hello(deviceType: deviceType, caps: caps))
+    if wantsSession { sendLocked(.sessionStart) }
+    if reconnected { sendLocked(.status(battery: batteryProvider?(), note: "reconnected")) }
+    startHeartbeat()
   }
 }
