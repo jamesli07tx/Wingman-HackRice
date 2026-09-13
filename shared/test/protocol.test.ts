@@ -71,7 +71,7 @@ describe("DESIGN.md §4.2 cortex → device examples", () => {
     const armed: ArmedMsg = {
       type: "armed",
       sessionId: "s_42",
-      config: { frameIntervalMs: 1750, frameMaxEdgePx: 768, docMaxEdgePx: 2048, renderMinGapMs: 500 },
+      config: { frameIntervalMs: 1750, frameMaxEdgePx: 1280, docMaxEdgePx: 2048, renderMinGapMs: 500 },
     };
     expect(armed.config).toEqual(deviceConfig());
     expect(deviceConfig().frameIntervalMs).toBe(FRAME_INTERVAL_MS);
