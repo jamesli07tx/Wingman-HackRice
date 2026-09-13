@@ -199,7 +199,7 @@ final class HudRenderer {
     }
   }
 
-  /// title (heading) / subtitle (secondary) / ≤ 5 lines (body) / footer (meta, secondary). Root must be a FlexBox.
+  /// title (heading) / subtitle (secondary) / ≤ 5 bullet lines (meta) / footer (meta, secondary). Root must be a FlexBox.
   /// `.icon*` styles move the title into a row next to a kind icon; `.card*` put the whole thing on a card background.
   /// `clip: false` renders the card exactly as given (playground fit probes); production runs HudText.fit.
   static func flexBox(for card: HudCard, style: HudStyle = .plain, clip: Bool = true) -> FlexBox {
@@ -217,7 +217,8 @@ final class HudRenderer {
         titleText
       }
       if let subtitle = c.subtitle { Text(subtitle, style: .body, color: .secondary) }
-      for line in lines { Text(line, style: .body) }
+      // Lines read as bullets in the smaller `meta` style: 38 body chars + "• " fit a meta row (meta is narrower per glyph).
+      for line in lines { Text("• " + line, style: .meta) }
       if let footer = c.footer { Text(footer, style: .meta, color: .secondary) }
     }
     return (style == .card || style == .iconCard) ? root.background(.card) : root

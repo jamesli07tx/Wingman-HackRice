@@ -13,3 +13,4 @@ dist/
 *.tsbuildinfo
 coverage/
 *.log
+glassbridge/build/

@@ -21,7 +21,7 @@ final class ProtocolTests: XCTestCase {
 
   func testDecodesArmedWithoutConfigFallsBackToNil() throws {
     XCTAssertEqual(try Wire.decode(#"{ "type": "armed", "sessionId": "s_42" }"#), .armed(sessionId: "s_42", config: nil))
-    XCTAssertEqual(ArmedConfig.defaults, ArmedConfig(frameIntervalMs: 1750, frameMaxEdgePx: 1280, docMaxEdgePx: 2048, renderMinGapMs: 500))
+    XCTAssertEqual(ArmedConfig.defaults, ArmedConfig(frameIntervalMs: 1000, frameMaxEdgePx: 1024, docMaxEdgePx: 2048, renderMinGapMs: 500))
   }
 
   func testDecodesCapturePhoto() throws {

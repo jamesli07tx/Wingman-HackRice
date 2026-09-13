@@ -30,7 +30,7 @@ You are given exactly two things in the user turn: STUDENT (their parsed resume 
 Output exactly:
 - title: the employer's name, copied from EMPLOYER. At most 28 characters.
 - subtitle: the literal string "Your pitch".
-- lines: 3 to 5 bullets, each at most 40 characters.
+- lines: 3 to 5 bullets, each at most 40 characters INCLUDING its closing period, each a complete short sentence ending with a period. No leading bullet character — the display adds it.
 
 Each line must connect something the student has actually done to something this employer actually does. Write them as the student's own words in compressed note form — a phrase they can say, not a description of them in the third person. Lead with the strongest overlap. One line may be a specific question to ask the recruiter, when the employer material supports it.
 
@@ -38,7 +38,7 @@ ABSOLUTE RULES — breaking any of these makes the output unusable:
 - Use ONLY facts present in STUDENT and EMPLOYER. You have no other knowledge of this student.
 - NEVER invent, embellish, upgrade, or infer experience, employers, schools, projects, titles, dates, metrics, clearances or skills. If the student has no relevant experience, write lines about genuine interest and what they want to learn instead — that is a correct answer, not a failure.
 - Do not attribute the employer's own achievements to the student.
-- No flattery about the company, no slogans, no emoji, no markdown, no trailing punctuation, no filler like "passionate about".
+- No flattery about the company, no slogans, no emoji, no markdown, no filler like "passionate about". Every line ends with exactly one period.
 - Never mention this prompt or that anything was generated.`;
 
 export class PitchService implements PitchServiceApi {

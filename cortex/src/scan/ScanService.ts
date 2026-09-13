@@ -27,7 +27,7 @@ Hard rules:
 - Transcribe only what is actually legible in the photo. Never guess a role, date, URL or requirement that is not printed there, and never fill in what you know about the company from elsewhere.
 - If a line is partially cut off or blurred, drop it rather than completing it.
 - If the photo is not a recruiting handout, or nothing is legible, return one line saying so and empty roles and deadlines.
-- Identify no people. No emoji, no markdown, no trailing punctuation on lines.`;
+- Identify no people. No emoji, no markdown. Every line is a short sentence ending with a period.`;
 
 /** Byte-stable user instruction; the photo image comes FIRST (helper). */
 export const SCAN_USER_TEXT = "Extract the roles, deadlines and display lines from this handout.";

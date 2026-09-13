@@ -42,7 +42,7 @@ enum FrameEncoder {
   }
 
   /// DESIGN.md §4.2: longest edge ≤ frameMaxEdgePx, JPEG q≈0.6, target ≤ 120 KB.
-  static func encodeFrame(_ image: CGImage, maxEdge: Int, quality: Double = 0.8) -> Data? {
+  static func encodeFrame(_ image: CGImage, maxEdge: Int, quality: Double = 0.7) -> Data? {
     jpeg(scaled(image, maxEdge: maxEdge), quality: quality)
   }
 

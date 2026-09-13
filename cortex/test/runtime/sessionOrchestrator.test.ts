@@ -326,7 +326,7 @@ describe("SessionOrchestrator", () => {
       kind: "ack",
       title: "Researching…",
       subtitle: "Maybe Stripe",
-      lines: ["Looking up Maybe Stripe"],
+      lines: ["Looking up Maybe Stripe."],
       footer: "Wingman",
     });
     // live path, not the corpus guess

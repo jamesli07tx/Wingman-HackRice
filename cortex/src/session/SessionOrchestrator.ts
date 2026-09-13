@@ -300,6 +300,8 @@ export class SessionOrchestrator implements OrchestratorApi {
         this.deps.gate.flightDone(sessionId);
         return;
       }
+      // The gate drops every frame until flightDone — say so once on the Feed instead of going silent.
+      this.deps.dashboard.emit({ type: "status", sessionId, note: `gate paused: identifying ${det.orgHint ?? "banner"}` });
       void this.#runIdentify(s, det);
       return;
     }
@@ -373,7 +375,7 @@ export class SessionOrchestrator implements OrchestratorApi {
           s,
           identified.kind === "timeout" ? "identify_timeout" : "llm_down",
           "Still looking",
-          ["Could not read that banner", "Move a little closer"],
+          ["Could not read that banner.", "Move a little closer."],
         );
         this.#startBackoff(s, det.orgHint);
         s.state = "ARMED";
@@ -399,7 +401,7 @@ export class SessionOrchestrator implements OrchestratorApi {
       const name = result.nameGuess?.trim() || det.orgHint?.trim() || null;
       if (unsure && !name) {
         // Nothing to research with: no corpus id, no name, no orgHint.
-        this.#degrade(s, "no_match", "No match", ["Nothing readable on that banner"]);
+        this.#degrade(s, "no_match", "No match", ["Nothing readable on that banner."]);
         this.#startBackoff(s, det.orgHint);
         s.state = "ARMED";
         return;
@@ -421,8 +423,8 @@ export class SessionOrchestrator implements OrchestratorApi {
         const why = resolved.kind === "timeout" ? "timeout" : errText(resolved.error);
         this.deps.dashboard.emit({ type: "status", sessionId: s.sessionId, note: `search_down: ${why}` });
         this.#degrade(s, "search_down", "Pulling details", [
-          name ?? "That company",
-          "Details are taking a moment",
+          name ?? "That company.",
+          "Details are taking a moment.",
         ]);
         this.#startBackoff(s, det.orgHint);
         s.state = "ARMED";
@@ -430,7 +432,7 @@ export class SessionOrchestrator implements OrchestratorApi {
       }
       if (resolved.value === null) {
         this.#degrade(s, "no_match", "No match", [
-          name ? `Nothing found for ${name}` : "Nothing found for that banner",
+          name ? `Nothing found for ${name}.` : "Nothing found for that banner.",
         ]);
         this.#startBackoff(s, det.orgHint);
         s.state = "ARMED";
@@ -522,7 +524,7 @@ export class SessionOrchestrator implements OrchestratorApi {
     card.page2 = {
       title: card.page1.title,
       subtitle: "Your pitch",
-      lines: ["Pitch unavailable right now", "Page 1 has the talking points"],
+      lines: ["Pitch unavailable right now.", "Page 1 has the talking points."],
     };
     this.#log.warn("pitch unavailable", { sessionId: s.sessionId, kind: pitched.kind, err: pitched.kind === "error" ? String((pitched as { error?: unknown }).error ?? "") : undefined });
     this.#sendError(s, "llm_down", "pitch unavailable");
@@ -651,7 +653,7 @@ export class SessionOrchestrator implements OrchestratorApi {
       kind: "ack",
       title: "Researching…",
       subtitle: clamp(name, 48),
-      lines: [clamp(`Looking up ${name}`, 40)],
+      lines: [clamp(`Looking up ${name}.`, 40)],
       footer: "Wingman",
     });
   }

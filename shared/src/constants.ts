@@ -5,8 +5,8 @@
 
 import type { ArmedConfig } from "./protocol.js";
 
-export const FRAME_INTERVAL_MS = 1750; // device sampling cadence
-export const FRAME_MAX_EDGE_PX = 1280; // full DAT .high frame (720×1280) — no downscale; banner text legibility for the gate
+export const FRAME_INTERVAL_MS = 1000; // 1 s: ×2 stability completes in ~2 s (was 1750)
+export const FRAME_MAX_EDGE_PX = 1024; // ~90 KB at q0.7 — sharper than 768, still fast over cellular
 export const DOC_MAX_EDGE_PX = 2048; // document photo (JPEG q ~ 0.8)
 export const STABILITY_N = 2; // consecutive gate hits before acting
 export const COOLDOWN_MIN = 1; // per-company re-identify suppression (minutes) — a booth revisit inside a demo should re-fire
@@ -17,6 +17,7 @@ export const ROTATE_SEC = 12; // page alternation interval
 export const NO_MATCH_BACKOFF_SEC = 20; // after no_match/timeout: same orgHint is not re-identified (stops the ack/hint loop)
 
 // per-stage timeouts -> degraded card, never a hang:
+export const STALE_FRAME_MS = 3000; // frames older than this at arrival (capture ts) are skipped — never gate a booth the wearer has left
 export const T_GATE_MS = 8000; // opus-5 gate: real p90 overran 4 s and a timed-out frame scores "nothing"
 export const T_IDENTIFY_MS = 5000;
 export const T_SEARCH_MS = 8000; // Tavily REST leg of the live path (4000 could not fit Tavily + condense)

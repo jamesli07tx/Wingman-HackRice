@@ -29,6 +29,7 @@ import type {
   DeviceType,
   StatusMsg,
 } from "@wingman/shared";
+import { STALE_FRAME_MS } from "@wingman/shared";
 import type { DeviceChannel, GatewayEvents } from "../interfaces.js";
 
 export const DEVICE_WS_PATH = "/ws/device";
@@ -333,6 +334,11 @@ export class DeviceGateway {
         events.onDeviceSessionStop(deviceId);
         break;
       case "frame":
+        // Stale-frame guard: a frame that queued behind a slow uplink may show a booth the wearer left.
+        if (typeof msg.ts === "number" && Date.now() - msg.ts > STALE_FRAME_MS) {
+          this.#logger.info("stale frame skipped", { deviceId, seq: msg.seq, ageMs: Date.now() - msg.ts });
+          break;
+        }
         events.onFrame(deviceId, msg.seq, Buffer.from(msg.dataBase64, "base64"));
         break;
       case "photo":

@@ -130,14 +130,17 @@ final class BridgeController: ObservableObject {
     useDevHarness = Config.isCortexConfigured ? false : (UserDefaults.standard.object(forKey: "useDevHarness") as? Bool ?? false)
     keepLensAwake = UserDefaults.standard.object(forKey: "keepLensAwake") as? Bool ?? true
     if let id = Keychain.get(Keychain.deviceIdKey), Keychain.get(Keychain.deviceTokenKey) != nil { linkState = .linked(deviceId: id) }
-    // FrameSampler invokes `send` on ITS OWN serial queue — hop to main before touching any state here.
+    // FrameSampler invokes `send` on ITS OWN serial queue. The socket send happens RIGHT HERE, off-main:
+    // CortexSocket is thread-safe, and a main-actor hop would queue every frame behind SwiftUI work
+    // (Feed items, lens renders, gate_debug text) — that was the visible "fps stall" after each card.
+    // Only the published counters/preview hop to main.
     let s = FrameSampler { [weak self] msg in
+      guard let self else { return }
+      self.socket?.send(msg)   // `socket` is only replaced on main; a torn read here at worst drops one frame
       // Decode the preview off-main (sampler queue), publish on main.
       var preview: UIImage?
       if case let .frame(_, _, b64) = msg, let d = Data(base64Encoded: b64) { preview = UIImage(data: d) }
       Task { @MainActor in
-        guard let self else { return }
-        self.socket?.send(msg)
         switch msg {
         case let .frame(seq, _, _):
           self.framesSent += 1

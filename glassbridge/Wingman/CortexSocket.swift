@@ -38,6 +38,9 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
   private var attempts = 0
   private var everConnected = false
   private var heartbeat: DispatchSourceTimer?
+  private var frameInFlight = false
+  /// Frames skipped because the previous one was still uploading (diagnostic; read from any thread, approximate).
+  private(set) var framesDropped = 0
 
   init(url: URL, token: String, deviceType: DeviceType = .glassesBridge,
        caps: DeviceCaps = DeviceCaps(video: true, photoHiRes: true)) {
@@ -89,11 +92,22 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
   }
 
   /// Frames are ephemeral (DESIGN.md §8): when the socket is down they are dropped, never queued.
+  /// Frames are also latest-wins: while one is still uploading (slow hotspot/cellular leg) a newer frame is
+  /// dropped, not queued — a queued frame reaches the gate seconds late, after the wearer has moved on.
   private func sendLocked(_ msg: DeviceToCortex) {
     guard state == .connected, let t = task else { return }
+    var isFrame = false
+    if case .frame = msg { isFrame = true }
+    if isFrame {
+      if frameInFlight { framesDropped += 1; return }
+      frameInFlight = true
+    }
     t.send(.string(Wire.encode(msg))) { [weak self] err in
-      guard err != nil, let self else { return }
-      self.q.async { self.fail(t) }
+      guard let self else { return }
+      self.q.async {
+        if isFrame { self.frameInFlight = false }
+        if err != nil { self.fail(t) }
+      }
     }
   }
 
@@ -130,6 +144,7 @@ final class CortexSocket: NSObject, URLSessionWebSocketDelegate {
     heartbeat?.cancel(); heartbeat = nil
     task?.cancel(with: .goingAway, reason: nil)
     task = nil
+    frameInFlight = false
   }
 
   private func scheduleReconnect() {
