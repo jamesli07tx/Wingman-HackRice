@@ -523,7 +523,8 @@ export class SessionOrchestrator implements OrchestratorApi {
       subtitle: "Your pitch",
       lines: ["Pitch unavailable right now", "Page 1 has the talking points"],
     };
-    this.#sendError(s, pitched.kind === "timeout" ? "llm_down" : "llm_down", "pitch unavailable");
+    this.#log.warn("pitch unavailable", { sessionId: s.sessionId, kind: pitched.kind, err: pitched.kind === "error" ? String((pitched as { error?: unknown }).error ?? "") : undefined });
+    this.#sendError(s, "llm_down", "pitch unavailable");
   }
 
   #scheduleRotation(s: Session, card: CardSet, delayMs: number): void {

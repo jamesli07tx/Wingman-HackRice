@@ -131,7 +131,14 @@ export class DashboardHub implements DashboardFeed {
     }
     // Read-only mirror: inbound dashboard frames are deliberately ignored.
     ws.on("message", () => undefined);
+    // CloudFront drops any WebSocket idle for 60 s and this socket only carries events, so keep it
+    // warm with a protocol-level ping every 25 s (invisible to clients; browsers auto-pong).
+    const keepalive = setInterval(() => {
+      try { ws.ping(); } catch { /* closing */ }
+    }, 25_000);
+    keepalive.unref?.();
     ws.on("close", () => {
+      clearInterval(keepalive);
       this.#clients.delete(ws);
       this.#log.info("dashboard disconnected", { clients: this.#clients.size });
     });

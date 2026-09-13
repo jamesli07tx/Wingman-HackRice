@@ -67,7 +67,9 @@ export class PitchService implements PitchServiceApi {
         JSON.stringify(employer),
       ].join("\n"),
       schema: PitchPageSchema,
-      maxTokens: this.opts.maxTokens ?? 1024,
+      // Was effort "high"/1024 tokens under a 10 s deadline → timeouts / thinking-only responses ("pitch unavailable").
+      maxTokens: this.opts.maxTokens ?? 2048,
+      effort: this.opts.effort ?? "medium",
     });
 
     // C4 fixes these two fields; never trust the model with them.

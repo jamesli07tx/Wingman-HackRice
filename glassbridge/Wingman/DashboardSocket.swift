@@ -124,8 +124,23 @@ final class DashboardSocket: NSObject, URLSessionWebSocketDelegate {
   }
 
   private func teardown() {
+    keepalive?.cancel(); keepalive = nil
     task?.cancel(with: .goingAway, reason: nil)
     task = nil
+  }
+
+  /// CloudFront closes idle WebSockets after 60 s and this socket only receives, so ping every 20 s.
+  private var keepalive: DispatchSourceTimer?
+  private func startKeepalive() {
+    keepalive?.cancel()
+    let t = DispatchSource.makeTimerSource(queue: q)
+    t.schedule(deadline: .now() + 20, repeating: 20)
+    t.setEventHandler { [weak self] in
+      guard let self, let task = self.task else { return }
+      task.sendPing { [weak self] err in if err != nil { self?.q.async { self?.fail(task) } } }
+    }
+    t.resume()
+    keepalive = t
   }
 
   private func scheduleReconnect() {
@@ -148,6 +163,7 @@ final class DashboardSocket: NSObject, URLSessionWebSocketDelegate {
       guard webSocketTask === self.task else { return }
       self.attempts = 0
       self.set(.connected)
+      self.startKeepalive()
     }
   }
 

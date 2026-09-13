@@ -21,8 +21,16 @@ export const T_GATE_MS = 8000; // opus-5 gate: real p90 overran 4 s and a timed-
 export const T_IDENTIFY_MS = 5000;
 export const T_SEARCH_MS = 8000; // Tavily REST leg of the live path (4000 could not fit Tavily + condense)
 export const T_RESEARCH_MS = 15000; // whole live research path (Tavily -> opus condense), behind the "Researching…" card
-export const T_PITCH_MS = 10000;
+export const T_PITCH_MS = 25000; // opus-5 pitch at effort medium; page 1 shows meanwhile, page 2 lands when ready
 export const T_PHOTO_MS = 5000;
+
+// live-research path (ContextService): process-memory memo + Tavily concurrency.
+// Nothing here touches Supabase — the corpus stays a curated, hand-built cache.
+export const RESEARCH_MEMO_TTL_MS = 10 * 60_000; // a researched company is reused for 10 min within one process
+export const RESEARCH_MEMO_NEG_TTL_MS = 60_000; // no_match / search_down / degraded: retry a minute later
+export const RESEARCH_MEMO_MAX = 200; // LRU-ish cap so a long fair cannot grow the map without bound
+export const RESEARCH_MAX_INFLIGHT = 2; // concurrent Tavily calls per process; extras queue FIFO
+export const RESEARCH_RETRY_MS = 800; // backoff before the single retry (+ jitter), inside the same budget
 
 // INTEGRATION: deviceConfig()
 // IN:  the constants above
