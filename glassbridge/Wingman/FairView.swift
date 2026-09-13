@@ -16,68 +16,52 @@ struct FairView: View {
   @State private var link = ""
   @State private var picked: PhotosPickerItem?
   @State private var readError: String?
-  @State private var query = ""
   @State private var editing: BriefTarget?
 
+  @State private var browsing = false
+
   var body: some View {
-    VStack(spacing: 16) {
-      briefsCard
-      importCard
-      if let imp = bridge.fairImport { resultCard(imp) }
+    NavigationStack {
+      VStack(spacing: 16) {
+        briefsCard
+        importCard
+        if let imp = bridge.fairImport { resultCard(imp) }
+      }
+      .navigationDestination(isPresented: $browsing) { BriefsListView(editing: $editing) }
+      .toolbar(.hidden, for: .navigationBar)
     }
     .task { await bridge.refreshFairImport(); await bridge.loadMyCompanies() }
     .sheet(item: $editing) { target in BriefEditor(target: target).environmentObject(bridge) }
   }
 
-  // MARK: my briefs
-
-  private var filtered: [MyCompany] {
-    let q = query.trimmingCharacters(in: .whitespaces)
-    return q.isEmpty ? bridge.myCompanies : bridge.myCompanies.filter { $0.name.localizedCaseInsensitiveContains(q) }
-  }
-
-  /// Brief completeness: green = title, subtitle and all 5 bullets; yellow = a card with gaps; red = no card.
-  private func fillColor(_ card: BriefCard?) -> Color {
-    guard let card else { return Theme.danger }
-    return isComplete(card) ? Theme.ok : Theme.warn
-  }
-  private func fillLabel(_ card: BriefCard?) -> String {
-    guard let card else { return "empty" }
-    return isComplete(card) ? "complete" : "\(card.lines.filter { !$0.isEmpty }.count)/5 bullets"
-  }
-  private func isComplete(_ card: BriefCard) -> Bool {
-    !card.title.isEmpty && !card.subtitle.isEmpty && card.lines.filter { !$0.isEmpty }.count >= 5
-  }
+  // MARK: my briefs — the whole card is the tap target; the list lives on its own page so all of it scrolls
 
   private var briefsCard: some View {
-    Card(title: "Your briefs", symbol: "square.and.pencil") {
-      Text("Tap a company to rewrite what YOUR glasses show for it. Only you see your version; everyone else keeps the shared brief.")
-        .font(.footnote).foregroundStyle(Theme.muted)
-        .fixedSize(horizontal: false, vertical: true)
-      TextField("", text: $query, prompt: Text("Search companies").foregroundColor(Theme.muted))
-        .autocorrectionDisabled().font(.footnote).wingmanField()
-      Button { editing = BriefTarget(company: nil) } label: { Text("New brief for a company not on file").frame(maxWidth: .infinity) }
-        .buttonStyle(GhostButtonStyle())
-        .disabled(!bridge.accountReady)
-      if let status = bridge.briefStatus { Banner(text: status, kind: status.hasPrefix("Cortex") ? .error : .note) }
-      ForEach(filtered.prefix(60)) { c in
-        Button { editing = BriefTarget(company: c) } label: {
-          HStack(spacing: 8) {
-            Circle().fill(fillColor(c.card)).frame(width: 8, height: 8)
-            Text(c.name).font(.footnote).foregroundStyle(Theme.text).lineLimit(1)
-            Spacer()
-            Text("\(c.custom ? "yours" : "shared") · \(fillLabel(c.card))").font(.caption2).foregroundStyle(Theme.muted)
-            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Theme.muted)
-          }
+    let all = bridge.myCompanies
+    let complete = all.filter { BriefFill.isComplete($0.card) }.count
+    let empty = all.filter { $0.card == nil }.count
+    return Button { browsing = true } label: {
+      Card(title: "Your briefs", symbol: "square.and.pencil") {
+        Text("Rewrite what YOUR glasses show for any company. Only you see your version; everyone else keeps the shared brief.")
+          .font(.footnote).foregroundStyle(Theme.muted)
+          .multilineTextAlignment(.leading)
+          .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 8) {
+          Pill("\(complete) complete", Theme.ok)
+          Pill("\(all.count - complete - empty) partial", Theme.warn)
+          Pill("\(empty) empty", Theme.danger)
         }
-      }
-      HStack(spacing: 12) {
-        legend(Theme.ok, "complete"); legend(Theme.warn, "partial"); legend(Theme.danger, "empty")
-      }
-      if bridge.myCompanies.isEmpty, bridge.accountReady {
-        Text("No companies on file yet — import a fair list below.").font(.caption).foregroundStyle(Theme.muted)
+        HStack {
+          Text(all.isEmpty ? "No companies on file yet — import a fair list below." : "Browse all \(all.count) companies")
+            .font(.footnote.weight(.bold)).foregroundStyle(Theme.accent)
+          Spacer()
+          Image(systemName: "chevron.right").font(.footnote.weight(.bold)).foregroundStyle(Theme.accent)
+        }
+        if let status = bridge.briefStatus { Banner(text: status, kind: status.hasPrefix("Cortex") ? .error : .note) }
       }
     }
+    .buttonStyle(.plain)
+    .disabled(!bridge.accountReady || all.isEmpty)
   }
 
   private var importCard: some View {
@@ -148,13 +132,6 @@ struct FairView: View {
           Text(c.note ?? c.status).font(.caption2).foregroundStyle(Theme.muted).lineLimit(1)
         }
       }
-    }
-  }
-
-  private func legend(_ color: Color, _ text: String) -> some View {
-    HStack(spacing: 4) {
-      Circle().fill(color).frame(width: 7, height: 7)
-      Text(text).font(.caption2).foregroundStyle(Theme.muted)
     }
   }
 
@@ -259,6 +236,83 @@ struct BriefEditor: View {
         .autocorrectionDisabled().font(.footnote).wingmanField()
       Text("\(text.wrappedValue.count)/\(max)")
         .font(.caption2).foregroundStyle(text.wrappedValue.count > max ? Theme.danger : Theme.muted)
+    }
+  }
+}
+
+/// Brief completeness: green = title, subtitle and all 5 bullets; yellow = a card with gaps; red = no card.
+enum BriefFill {
+  static func isComplete(_ card: BriefCard?) -> Bool {
+    guard let card else { return false }
+    return !card.title.isEmpty && !card.subtitle.isEmpty && card.lines.filter { !$0.isEmpty }.count >= 5
+  }
+  static func color(_ card: BriefCard?) -> Color {
+    guard let card else { return Theme.danger }
+    return isComplete(card) ? Theme.ok : Theme.warn
+  }
+  static func label(_ card: BriefCard?) -> String {
+    guard let card else { return "empty" }
+    return isComplete(card) ? "complete" : "\(card.lines.filter { !$0.isEmpty }.count)/5 bullets"
+  }
+}
+
+/// The inner page: every company on file in a searchable, fully scrolling list. Tap a row to edit your brief;
+/// the + button starts one for a company not on file.
+struct BriefsListView: View {
+  @EnvironmentObject private var bridge: BridgeController
+  @Binding var editing: BriefTarget?
+  @State private var query = ""
+
+  private var filtered: [MyCompany] {
+    let q = query.trimmingCharacters(in: .whitespaces)
+    return q.isEmpty ? bridge.myCompanies : bridge.myCompanies.filter { $0.name.localizedCaseInsensitiveContains(q) }
+  }
+
+  var body: some View {
+    List {
+      Section {
+        ForEach(filtered) { c in
+          Button { editing = BriefTarget(company: c) } label: {
+            HStack(spacing: 10) {
+              Circle().fill(BriefFill.color(c.card)).frame(width: 9, height: 9)
+              VStack(alignment: .leading, spacing: 2) {
+                Text(c.name).font(.body).foregroundStyle(Theme.text).lineLimit(1)
+                Text("\(c.custom ? "yours" : "shared") · \(BriefFill.label(c.card))").font(.caption).foregroundStyle(Theme.muted)
+              }
+              Spacer()
+              Image(systemName: "chevron.right").font(.caption).foregroundStyle(Theme.muted)
+            }
+          }
+          .listRowBackground(Theme.surface)
+        }
+      } header: {
+        HStack(spacing: 12) {
+          legend(Theme.ok, "complete"); legend(Theme.warn, "partial"); legend(Theme.danger, "empty")
+          Spacer()
+          Text("\(filtered.count)").font(.caption2).foregroundStyle(Theme.muted)
+        }
+      }
+    }
+    .listStyle(.insetGrouped)
+    .scrollContentBackground(.hidden)
+    .background(Theme.bg)
+    .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search companies")
+    .navigationTitle("Your briefs")
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar(.visible, for: .navigationBar)
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        Button { editing = BriefTarget(company: nil) } label: { Image(systemName: "plus") }
+          .tint(Theme.accent)
+      }
+    }
+    .refreshable { await bridge.loadMyCompanies() }
+  }
+
+  private func legend(_ color: Color, _ text: String) -> some View {
+    HStack(spacing: 4) {
+      Circle().fill(color).frame(width: 7, height: 7)
+      Text(text).font(.caption2).foregroundStyle(Theme.muted)
     }
   }
 }
