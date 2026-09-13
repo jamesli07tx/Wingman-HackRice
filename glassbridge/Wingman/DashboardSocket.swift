@@ -68,7 +68,8 @@ final class DashboardSocket: NSObject, URLSessionWebSocketDelegate {
     Task { [weak self] in
       guard let self else { return }
       do {
-        let token = try await self.tokenProvider()
+        // Clerk's token refresh can stall on a bad network and would leave us "connecting" forever — bound it.
+        let token = try await withDeadline(seconds: 10) { try await self.tokenProvider() }
         self.q.async { self.opening = false; self.start(token: token) }
       } catch {
         NSLog("DashboardSocket: token failed: \(error.localizedDescription)")
@@ -92,6 +93,12 @@ final class DashboardSocket: NSObject, URLSessionWebSocketDelegate {
     task = t
     t.resume()
     receiveLoop(t)
+    // Handshake deadline: a CloudFront/hotspot hiccup can leave the upgrade pending well past our patience.
+    q.asyncAfter(deadline: .now() + 20) { [weak self] in
+      guard let self, self.task === t, self.state != .connected else { return }
+      NSLog("DashboardSocket: handshake timed out")
+      self.fail(t)
+    }
   }
 
   private func receiveLoop(_ t: URLSessionWebSocketTask) {
@@ -174,5 +181,17 @@ final class DashboardSocket: NSObject, URLSessionWebSocketDelegate {
 
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
     q.async { guard task === self.task else { return }; self.fail() }
+  }
+}
+
+/// Race an async operation against a deadline; throws `DeadlineError` when the deadline wins.
+struct DeadlineError: Error {}
+func withDeadline<T: Sendable>(seconds: Double, _ op: @escaping @Sendable () async throws -> T) async throws -> T {
+  try await withThrowingTaskGroup(of: T.self) { group in
+    group.addTask { try await op() }
+    group.addTask { try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000)); throw DeadlineError() }
+    let first = try await group.next()!
+    group.cancelAll()
+    return first
   }
 }
