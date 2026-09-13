@@ -63,8 +63,10 @@ struct SessionView: View {
 
   // MARK: what is on the lens right now
 
-  private func lensCard(_ card: HudCard) -> some View {
-    Card(title: "On the lens", symbol: "eye") {
+  /// Mirrors HudRenderer.flexBox: the same HudText.fit clipping, bullet lines in a smaller style, footer in meta.
+  private func lensCard(_ raw: HudCard) -> some View {
+    let card = HudText.fit(raw)
+    return Card(title: "On the lens", symbol: "eye") {
       RoundedRectangle(cornerRadius: 14)
         .fill(Color.black)
         .aspectRatio(1, contentMode: .fit)     // the lens canvas is square (DESIGN.md §4.2 renderer contract)
@@ -77,7 +79,7 @@ struct SessionView: View {
               Text(subtitle).font(.subheadline).foregroundStyle(Theme.accent)
             }
             ForEach(Array((card.lines ?? []).prefix(5).enumerated()), id: \.offset) { _, line in
-              Text(line).font(.footnote).foregroundStyle(.white.opacity(0.85))
+              Text("• " + line).font(.caption).foregroundStyle(.white.opacity(0.85))
             }
             Spacer(minLength: 0)
             HStack {
@@ -92,7 +94,7 @@ struct SessionView: View {
         }
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.accent.opacity(0.30)))
 
-      Text("\(card.kind.rawValue) · seq \(card.seq)").font(.caption2).foregroundStyle(Theme.muted)
+      Text("\(card.kind.rawValue) · seq \(card.seq) · live mirror of the glasses").font(.caption2).foregroundStyle(Theme.muted)
     }
   }
 
