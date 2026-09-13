@@ -15,13 +15,13 @@ final class ProtocolTests: XCTestCase {
   // MARK: Cortex → Device (decode, lenient)
 
   func testDecodesArmedWithConfig() throws {
-    let s = #"{ "type": "armed", "sessionId": "s_42", "config": { "frameIntervalMs": 1750, "frameMaxEdgePx": 768, "docMaxEdgePx": 2048, "renderMinGapMs": 500 } }"#
-    XCTAssertEqual(try Wire.decode(s), .armed(sessionId: "s_42", config: ArmedConfig(frameIntervalMs: 1750, frameMaxEdgePx: 768, docMaxEdgePx: 2048, renderMinGapMs: 500)))
+    let s = #"{ "type": "armed", "sessionId": "s_42", "config": { "frameIntervalMs": 1750, "frameMaxEdgePx": 1280, "docMaxEdgePx": 2048, "renderMinGapMs": 500 } }"#
+    XCTAssertEqual(try Wire.decode(s), .armed(sessionId: "s_42", config: ArmedConfig(frameIntervalMs: 1750, frameMaxEdgePx: 1280, docMaxEdgePx: 2048, renderMinGapMs: 500)))
   }
 
   func testDecodesArmedWithoutConfigFallsBackToNil() throws {
     XCTAssertEqual(try Wire.decode(#"{ "type": "armed", "sessionId": "s_42" }"#), .armed(sessionId: "s_42", config: nil))
-    XCTAssertEqual(ArmedConfig.defaults, ArmedConfig(frameIntervalMs: 1750, frameMaxEdgePx: 768, docMaxEdgePx: 2048, renderMinGapMs: 500))
+    XCTAssertEqual(ArmedConfig.defaults, ArmedConfig(frameIntervalMs: 1750, frameMaxEdgePx: 1280, docMaxEdgePx: 2048, renderMinGapMs: 500))
   }
 
   func testDecodesCapturePhoto() throws {

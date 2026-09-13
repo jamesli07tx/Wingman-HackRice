@@ -237,7 +237,7 @@ GET  /api/companies?q=stri                             → [ { "companyId", "nam
 { "type": "session_stop" }
 
 { "type": "frame", "seq": 412, "ts": 1757700000123, "mime": "image/jpeg", "dataBase64": "…" }
-        // sampled at FRAME_INTERVAL_MS, longest edge ≤ 768 px, JPEG q≈0.6, target ≤ 120 KB
+        // sampled at FRAME_INTERVAL_MS, longest edge ≤ 1280 px (full DAT frame), JPEG q≈0.8, target ≤ 250 KB
 
 { "type": "photo", "reqId": "r_18", "mime": "image/jpeg", "dataBase64": "…" }
         // response to capture_photo; document quality: ≤ 2048 px, q≈0.8
@@ -250,7 +250,7 @@ GET  /api/companies?q=stri                             → [ { "companyId", "nam
 
 ```json
 { "type": "armed", "sessionId": "s_42",
-  "config": { "frameIntervalMs": 1750, "frameMaxEdgePx": 768,
+  "config": { "frameIntervalMs": 1750, "frameMaxEdgePx": 1280,
               "docMaxEdgePx": 2048, "renderMinGapMs": 500 } }
         // config is OPTIONAL and server-authoritative: devices apply it when present,
         // else fall back to compiled defaults (Appendix D). This is how demo-day tuning
@@ -531,7 +531,7 @@ Runtime authority: Cortex pushes the device-relevant subset (`frameIntervalMs`, 
 
 ```ts
 export const FRAME_INTERVAL_MS   = 1750;  // device sampling cadence
-export const FRAME_MAX_EDGE_PX   = 768;   // frame downscale (JPEG q ≈ 0.6)
+export const FRAME_MAX_EDGE_PX   = 1280;  // full 720×1280 DAT frame, no downscale (JPEG q ≈ 0.8)
 export const DOC_MAX_EDGE_PX     = 2048;  // document photo (JPEG q ≈ 0.8)
 export const STABILITY_N         = 2;     // consecutive gate hits before acting
 export const COOLDOWN_MIN        = 1;     // per-company re-identify suppression — a booth revisit inside a demo should re-fire

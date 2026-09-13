@@ -74,7 +74,7 @@ struct ArmedConfig: Codable, Equatable {
   var renderMinGapMs: Int
 
   /// DESIGN.md Appendix D compiled fallbacks. Overridden by armed.config whenever present.
-  static let defaults = ArmedConfig(frameIntervalMs: 1750, frameMaxEdgePx: 768, docMaxEdgePx: 2048, renderMinGapMs: 500)
+  static let defaults = ArmedConfig(frameIntervalMs: 1750, frameMaxEdgePx: 1280, docMaxEdgePx: 2048, renderMinGapMs: 500)
 }
 
 // MARK: - Device → Cortex (encoded strictly)

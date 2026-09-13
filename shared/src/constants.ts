@@ -6,7 +6,7 @@
 import type { ArmedConfig } from "./protocol.js";
 
 export const FRAME_INTERVAL_MS = 1750; // device sampling cadence
-export const FRAME_MAX_EDGE_PX = 768; // frame downscale (JPEG q ~ 0.6)
+export const FRAME_MAX_EDGE_PX = 1280; // full DAT .high frame (720×1280) — no downscale; banner text legibility for the gate
 export const DOC_MAX_EDGE_PX = 2048; // document photo (JPEG q ~ 0.8)
 export const STABILITY_N = 2; // consecutive gate hits before acting
 export const COOLDOWN_MIN = 1; // per-company re-identify suppression (minutes) — a booth revisit inside a demo should re-fire
