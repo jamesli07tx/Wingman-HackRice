@@ -657,10 +657,10 @@ describe("SessionOrchestrator + ContextService live research path", () => {
     h.identify.mockResolvedValueOnce({ corpusId: null, nameGuess: "Ramp", confidence: 0.7 });
 
     h.orch.onDetection(sessionId, banner("Ramp"));
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1300); // 800 ms backoff + jitter for the single retry
 
     expect(summarize).not.toHaveBeenCalled();
-    expect(fetchFake.calls).toHaveLength(1); // an HTTP status is final — no retry
+    expect(fetchFake.calls).toHaveLength(2); // 5xx is retried exactly once, then final
     expect(h.channel.errors().map((e) => e.code)).toContain("search_down");
     expect(h.channel.lastCard()).toMatchObject({ kind: "hint", title: "Pulling details" });
     expect(h.dashboardEvents).toContainEqual({

@@ -438,6 +438,7 @@ export class SessionOrchestrator implements OrchestratorApi {
       }
 
       const ctx = resolved.value;
+      if (ctx.note) this.deps.dashboard.emit({ type: "status", sessionId: s.sessionId, note: ctx.note });
       if (s.card && s.card.companyId === ctx.companyId) {
         // Same company again — suppressed (the COOLDOWN_MIN cooldown owns this).
         this.deps.gate.startCooldown(s.sessionId, ctx.companyId);

@@ -13,10 +13,22 @@
 //   corpusId hit         -> companies.summary_card, PRE-GENERATED, instant.
 //   corpusId null + name -> exact name/alias row if we have one (still instant)
 //                        -> else Tavily REST + opus-5 condense (T_SEARCH_MS),
-//                           upserted back as tier "marquee", source "tavily",
-//                           so the second look at the same booth is instant.
+//                           behind a process-memory memo (RESEARCH_MEMO_TTL_MS),
+//                           a per-name dedupe and a RESEARCH_MAX_INFLIGHT gate.
+//                           NOTHING is written back to the corpus (the corpus is
+//                           hand-curated; `cacheLiveResults` stays off).
 
-import { SUMMARY_CARD_RULES, SummaryCardSchema, T_SEARCH_MS } from "@wingman/shared";
+import {
+  RESEARCH_MAX_INFLIGHT,
+  RESEARCH_MEMO_MAX,
+  RESEARCH_MEMO_NEG_TTL_MS,
+  RESEARCH_MEMO_TTL_MS,
+  RESEARCH_RETRY_MS,
+  SUMMARY_CARD_RULES,
+  SummaryCardSchema,
+  T_RESEARCH_MS,
+  T_SEARCH_MS,
+} from "@wingman/shared";
 import type { CompanyRecord, SummaryCardContent } from "@wingman/shared";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CompanyContext, ContextProvider } from "../interfaces.js";
@@ -73,12 +85,17 @@ export interface ContextServiceOptions {
   tavilyApiKey?: string;
   /** write live-searched companies back into the corpus (default false — research every time) */
   cacheLiveResults?: boolean;
-  /** Appendix D T_SEARCH_MS */
+  /** Appendix D T_SEARCH_MS — the Tavily leg (both attempts + backoff) */
   searchTimeoutMs?: number;
+  /** Appendix D T_RESEARCH_MS — the whole live path, incl. queue wait */
+  researchTimeoutMs?: number;
   tavilyUrl?: string;
 }
 
 const TAVILY_URL = "https://api.tavily.com/search";
+/** per-result snippet cap, and the ~4 kB ceiling on what opus condenses */
+const RESULT_MAX_CHARS = 600;
+const EVIDENCE_MAX_CHARS = 4000;
 
 /** Tavily answered, but not with a result: a key/quota/server problem, never a
  *  "no such company". Thrown so the orchestrator degrades with `search_down`
@@ -133,10 +150,29 @@ export function slugify(name: string): string {
   return slug.length > 0 ? slug : "unknown";
 }
 
+/** One remembered research outcome. `err` = the call failed (search_down). */
+interface MemoEntry {
+  ctx: CompanyContext | null;
+  err?: unknown;
+  until: number;
+}
+
 export class ContextService implements ContextProvider {
   private readonly searchTimeoutMs: number;
+  private readonly researchTimeoutMs: number;
   private readonly tavilyUrl: string;
   private readonly cacheLiveResults: boolean;
+
+  // Live-research scaling, all in process memory — nothing here touches Supabase.
+  // ponytail: per-instance, not a module singleton; cortex builds one
+  // ContextService. Move to a shared store only if cortex ever runs multi-process.
+  /** normalized name -> last outcome. Insertion order doubles as the LRU order. */
+  private readonly memo = new Map<string, MemoEntry>();
+  /** normalized name -> the research already running for it (dedupe). */
+  private readonly inflight = new Map<string, Promise<CompanyContext | null>>();
+  /** FIFO of callers waiting for a Tavily slot. */
+  private readonly waiting: (() => void)[] = [];
+  private tavilyActive = 0;
 
   constructor(
     private readonly supabase: SupabaseClient,
@@ -145,6 +181,7 @@ export class ContextService implements ContextProvider {
     private readonly opts: ContextServiceOptions = {},
   ) {
     this.searchTimeoutMs = opts.searchTimeoutMs ?? T_SEARCH_MS;
+    this.researchTimeoutMs = opts.researchTimeoutMs ?? T_RESEARCH_MS;
     this.tavilyUrl = opts.tavilyUrl ?? TAVILY_URL;
     this.cacheLiveResults = opts.cacheLiveResults ?? false;
   }
@@ -212,9 +249,58 @@ export class ContextService implements ContextProvider {
     return this.toContext(rowToRecord(rows[0]));
   }
 
+  /** Live research (D6): memo -> per-name dedupe -> Tavily slot -> condense.
+   *  Returns null when Tavily genuinely found nothing; THROWS when the search
+   *  backend itself is unusable, so the orchestrator can say `search_down`. */
   private async liveSearch(name: string): Promise<CompanyContext | null> {
-    const evidence = await this.tavily(name);
-    if (!evidence) return null;
+    const key = name.trim().toLowerCase();
+
+    const memo = this.memo.get(key);
+    if (memo && memo.until > Date.now()) {
+      this.memo.delete(key);
+      this.memo.set(key, memo); // touch — insertion order is the LRU order
+      // eslint-disable-next-line no-console
+      console.info(`[context] research memo hit: ${name}`);
+      if (memo.err) throw memo.err;
+      return memo.ctx && { ...memo.ctx, note: `research memo hit: ${name}` };
+    }
+    if (memo) this.memo.delete(key); // expired
+
+    // Two lenses on the same banner (or a re-detect mid-flight) = ONE Tavily call.
+    const running = this.inflight.get(key);
+    if (running) return running;
+
+    const flight = this.research(name, key);
+    this.inflight.set(key, flight);
+    try {
+      return await flight;
+    } finally {
+      this.inflight.delete(key);
+    }
+  }
+
+  private async research(name: string, key: string): Promise<CompanyContext | null> {
+    const started = Date.now();
+    const until = started + this.researchTimeoutMs;
+
+    let evidence: string | null;
+    try {
+      evidence = await this.withTavilySlot(async () => {
+        // Queued past our own budget: the orchestrator has already degraded, so
+        // do not spend a Tavily call (and a rate-limit slot) nobody is waiting for.
+        if (Date.now() >= until) return null;
+        return this.tavily(name, Math.min(until, Date.now() + this.searchTimeoutMs));
+      });
+    } catch (err) {
+      // search_down is remembered briefly: a dead key or a rate limit is a
+      // property of the minute, not of the company.
+      this.remember(key, { ctx: null, err, until: Date.now() + RESEARCH_MEMO_NEG_TTL_MS });
+      throw err;
+    }
+    if (!evidence) {
+      this.remember(key, { ctx: null, until: Date.now() + RESEARCH_MEMO_NEG_TTL_MS });
+      return null;
+    }
 
     let card: SummaryCardContent | null = null;
     try {
@@ -229,7 +315,7 @@ export class ContextService implements ContextProvider {
       name,
       aliases: [],
       tier: "marquee",
-      summaryMd: evidence.slice(0, 4000),
+      summaryMd: evidence,
       roles: [],
       deadlines: [],
       careersUrl: "",
@@ -238,19 +324,26 @@ export class ContextService implements ContextProvider {
       source: "tavily",
       updatedAt: new Date().toISOString(),
     };
+    const secs = ((Date.now() - started) / 1000).toFixed(1);
 
     if (!card) {
       // Tavily found material but opus could not condense it: render the raw
-      // evidence degraded rather than dropping to no_match, and do NOT cache —
-      // a bad card must not become the instant path for this booth.
+      // evidence degraded rather than dropping to no_match, and remember it only
+      // briefly so the next look at this booth gets another shot at a real card.
       const degraded = fallbackCard(record);
-      if (!degraded) return null;
-      return {
+      if (!degraded) {
+        this.remember(key, { ctx: null, until: Date.now() + RESEARCH_MEMO_NEG_TTL_MS });
+        return null;
+      }
+      const ctx: CompanyContext = {
         companyId,
         displayName: name,
         card: { ...degraded, subtitle: "Pulling details…" },
         record,
+        note: `research degraded: ${name} ${secs} s (condense failed)`,
       };
+      this.remember(key, { ctx, until: Date.now() + RESEARCH_MEMO_NEG_TTL_MS });
+      return ctx;
     }
 
     // Write-back to the corpus is OFF by default (human's call, 2026-09-13): the corpus is a curated
@@ -278,32 +371,67 @@ export class ContextService implements ContextProvider {
       /* ignore — the card is already in hand */
     }
 
-    return { companyId, displayName: name, card, record };
+    const ctx: CompanyContext = {
+      companyId,
+      displayName: name,
+      card,
+      record,
+      note: `research ok: ${name} ${secs} s`,
+    };
+    this.remember(key, { ctx, until: Date.now() + RESEARCH_MEMO_TTL_MS });
+    // eslint-disable-next-line no-console
+    console.info(`[context] research ok: ${name} ${secs} s`);
+    return ctx;
   }
 
-  /** Tavily REST inside one T_SEARCH_MS budget, with a single retry for a
-   *  dropped connection. Returns flattened evidence text, null when Tavily
-   *  genuinely found nothing, and THROWS when Tavily itself is unusable
-   *  (missing key, HTTP error) so the lens can say `search_down`. */
-  private async tavily(name: string): Promise<string | null> {
+  /** Process-memory memo, LRU-ish: oldest insertion evicted past the cap. */
+  private remember(key: string, entry: MemoEntry): void {
+    this.memo.delete(key);
+    this.memo.set(key, entry);
+    for (const oldest of this.memo.keys()) {
+      if (this.memo.size <= RESEARCH_MEMO_MAX) break;
+      this.memo.delete(oldest);
+    }
+  }
+
+  /** At most RESEARCH_MAX_INFLIGHT Tavily calls per process; the rest queue FIFO.
+   *  The slot covers the Tavily leg only (bounded by T_SEARCH_MS) — the opus
+   *  condense is unbounded and must not hold a searcher's place in the queue. */
+  private async withTavilySlot<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.tavilyActive < RESEARCH_MAX_INFLIGHT) this.tavilyActive++;
+    else await new Promise<void>((resume) => this.waiting.push(resume)); // slot handed over, not re-counted
+    try {
+      return await fn();
+    } finally {
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.tavilyActive--;
+    }
+  }
+
+  /** Tavily REST inside ONE deadline shared by both attempts. At most one retry,
+   *  and only for what a retry can fix: 429, 5xx, and transport drops. Any other
+   *  4xx (401 dead key, 403 quota) is final — retrying just burns the budget the
+   *  orchestrator is holding a "Researching…" card against. */
+  private async tavily(name: string, until: number): Promise<string | null> {
     const apiKey = this.opts.tavilyApiKey ?? process.env.TAVILY_API_KEY;
     if (!apiKey) throw new Error("tavily key missing");
 
-    // Both attempts share ONE deadline: a retry must not double the budget the
-    // orchestrator is holding a "Researching…" card against.
-    const until = Date.now() + this.searchTimeoutMs;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; ; attempt++) {
       const left = until - Date.now();
       if (left <= 0) return null;
       try {
         return await this.tavilyOnce(name, apiKey, left);
       } catch (err) {
-        // HTTP status = final (a retry would just burn the budget); transport
-        // error = one retry, then give up.
-        if (err instanceof TavilyHttpError || attempt === 1) throw err;
+        const retryable =
+          err instanceof TavilyHttpError ? err.status === 429 || err.status >= 500 : true;
+        if (attempt > 0 || !retryable) throw err;
+        // Jitter so a room full of lenses does not re-hit the rate limit in lockstep.
+        const backoff = RESEARCH_RETRY_MS + Math.floor(Math.random() * 400);
+        if (until - Date.now() <= backoff) throw err; // no room to retry inside the budget
+        await new Promise((resume) => setTimeout(resume, backoff));
       }
     }
-    return null;
   }
 
   private async tavilyOnce(name: string, apiKey: string, budgetMs: number): Promise<string | null> {
@@ -317,15 +445,19 @@ export class ContextService implements ContextProvider {
         headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
           api_key: apiKey,
-          query: `${name} company overview hiring university recruiting`,
+          // Hiring intent, not a general profile: the card is 3-5 lines a student
+          // reads at a booth, so ask for the material those lines are made of.
+          query: `${name} company careers hiring`,
           search_depth: "basic",
-          include_answer: true,
+          topic: "general",
           max_results: 5,
+          include_answer: true,
         }),
         signal: controller.signal,
       });
       if (!res.ok) {
         const body = res.text ? (await res.text().catch(() => "")).slice(0, 120) : "";
+        // The key is never logged — only the status and the first 120 chars.
         // eslint-disable-next-line no-console
         console.warn(`[context] tavily HTTP ${res.status} for "${name}": ${body}`);
         throw new TavilyHttpError(res.status);
@@ -334,12 +466,18 @@ export class ContextService implements ContextProvider {
         answer?: string | null;
         results?: { title?: string; url?: string; content?: string }[];
       };
+      // Tavily's own `answer` leads: it is already condensed, and on a thin
+      // employer it is often the only usable sentence in the response.
       const parts: string[] = [];
-      if (body.answer) parts.push(body.answer);
+      const answer = body.answer?.trim();
+      if (answer) parts.push(answer);
       for (const r of body.results ?? []) {
-        parts.push(`${r.title ?? ""} (${r.url ?? ""})\n${r.content ?? ""}`.trim());
+        const head = `${r.title ?? ""} ${r.url ? `(${r.url})` : ""}`.trim();
+        const content = (r.content ?? "").slice(0, RESULT_MAX_CHARS).trim();
+        if (!head && !content) continue;
+        parts.push(`${head}\n${content}`.trim());
       }
-      const evidence = parts.filter(Boolean).join("\n\n").trim();
+      const evidence = parts.join("\n\n").trim().slice(0, EVIDENCE_MAX_CHARS);
       return evidence.length > 0 ? evidence : null;
     } finally {
       clearTimeout(timer);

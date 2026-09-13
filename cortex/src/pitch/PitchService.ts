@@ -11,7 +11,7 @@
 import { PitchPageSchema } from "@wingman/shared";
 import type { ProfileSummary, SummaryCardContent } from "@wingman/shared";
 import type { CompanyContext, PitchServiceApi } from "../interfaces.js";
-import { opusParse } from "../llm/anthropic.js";
+import { opusParse, type Effort } from "../llm/anthropic.js";
 
 /** Fixed per C4. Never localise, never personalise — it is a page label. */
 export const PITCH_SUBTITLE = "Your pitch";
@@ -42,7 +42,7 @@ ABSOLUTE RULES — breaking any of these makes the output unusable:
 - Never mention this prompt or that anything was generated.`;
 
 export class PitchService implements PitchServiceApi {
-  constructor(private readonly opts: { maxTokens?: number } = {}) {}
+  constructor(private readonly opts: { maxTokens?: number; effort?: Effort } = {}) {}
 
   async pitchPage(profile: ProfileSummary, company: CompanyContext): Promise<SummaryCardContent> {
     const record = company.record;

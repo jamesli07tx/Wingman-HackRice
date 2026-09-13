@@ -103,6 +103,10 @@ export interface CompanyContext {
   displayName: string;
   card: SummaryCardContent;
   record: CompanyRecord | null;
+  /** Optional one-line outcome note for the dashboard feed (live-research path
+   *  only, e.g. "research ok: Ramp 2.1 s"). The orchestrator mirrors it as a
+   *  `status` event — the same hook `search_down` already uses. */
+  note?: string;
 }
 
 export interface ContextProvider {
