@@ -39,3 +39,14 @@ create table if not exists link_codes (
   user_id    text not null,
   expires_at timestamptz not null
 );
+
+-- Per-user company briefs: a user's own edit of a company's lens card. Overrides the shared
+-- companies.summary_card (and a live-researched card with the same slug) for THAT user's sessions only.
+create table if not exists user_company_cards (
+  user_id    text not null,      -- Clerk user id
+  company_id text not null,      -- companies.company_id, or slugify(name) for a company not on file
+  name       text not null,
+  card       jsonb not null,     -- SummaryCardContent (C3 limits enforced by Cortex)
+  updated_at timestamptz not null default now(),
+  primary key (user_id, company_id)
+);

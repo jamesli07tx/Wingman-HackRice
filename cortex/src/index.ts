@@ -22,6 +22,8 @@ import { SessionOrchestrator } from "./session/SessionOrchestrator.js";
 import { DashboardHub } from "./dashboard/DashboardHub.js";
 import { gateModel } from "./llm/anthropic.js";
 import { createClerkVerifier, restRoutes } from "./rest/routes.js";
+import { companyRoutes } from "./rest/companyRoutes.js";
+import { UserCardService } from "./profile/UserCardService.js";
 import { SceneGate } from "./gate/SceneGate.js";
 import { IdentifyService, type IdentifyCorpusEntry } from "./identify/IdentifyService.js";
 import { createFairImportService, fairRoutes } from "./fairs/index.js";
@@ -124,6 +126,7 @@ async function wireFullStack(): Promise<void> {
   const pitch = new PitchService();
   const scan = new ScanService();
   const profiles = new ProfileService(supabase);
+  const userCards = new UserCardService(supabase);
 
   // Per user: the session's pitch is written from the resume of whoever linked the glasses.
   const getProfile = async (userId: string): Promise<ProfileSummary | null> =>
@@ -145,6 +148,7 @@ async function wireFullStack(): Promise<void> {
     pitch,
     scan,
     getProfile,
+    getUserCard: (userId, companyId) => userCards.get(userId, companyId),
     dashboard: hub,
     logger: log,
   });
@@ -188,6 +192,7 @@ async function wireFullStack(): Promise<void> {
     },
   });
   await app.register(fairRoutes({ service: fairs, verifyToken }));
+  await app.register(companyRoutes({ cards: userCards, verifyToken }));
 
   if (process.env.MOCK_DEVICE === "1") {
     // INTEGRATION: fixture E2E — the whole pipeline with zero hardware.

@@ -71,6 +71,8 @@ export interface SessionOrchestratorDeps {
   scan: ScanServiceApi;
   /** Single-user demo (D8): the cached ProfileSummary, pre-loaded at session start. */
   getProfile: (userId: string) => Promise<ProfileSummary | null>;
+  /** Optional: the user's own brief for a company (UserCardService.get) — replaces page 1 and feeds the pitch. */
+  getUserCard?: (userId: string, companyId: string) => Promise<SummaryCardContent | null>;
   dashboard: DashboardFeed;
   /** Injectable clock (tests). */
   now?: () => number;
@@ -133,6 +135,8 @@ async function withDeadline<T>(p: Promise<T>, ms: number): Promise<Settled<T>> {
   }
 }
 
+/** Deadline for the per-user card lookup before a present (Supabase point read). */
+const USER_CARD_MS = 1500;
 const GATE_ERROR_MIN_GAP_MS = 10_000;
 
 export class SessionOrchestrator implements OrchestratorApi {
@@ -191,7 +195,19 @@ export class SessionOrchestrator implements OrchestratorApi {
       s.state = "ARMED";
       return;
     }
-    this.#present(s, resolved.value, 1);
+    this.#present(s, await this.#personalized(s, resolved.value), 1);
+  }
+
+  /** Swap in the user's own card for this company when they have one (short deadline: the shared
+   *  card is always good enough to show, a slow lookup must not delay the lens). */
+  async #personalized(s: Session, ctx: CompanyContext): Promise<CompanyContext> {
+    if (!this.deps.getUserCard) return ctx;
+    const r = await withDeadline(this.deps.getUserCard(s.channel.userId, ctx.companyId), USER_CARD_MS);
+    if (r.kind !== "ok") {
+      if (r.kind === "error") this.#log.warn("user card lookup failed", { sessionId: s.sessionId, err: String(r.error) });
+      return ctx;
+    }
+    return r.value ? { ...ctx, card: r.value, note: ctx.note } : ctx;
   }
 
   activeSessionForUser(): { sessionId: string; deviceId: string } | null {
@@ -443,7 +459,8 @@ export class SessionOrchestrator implements OrchestratorApi {
         return;
       }
 
-      const ctx = resolved.value;
+      const ctx = await this.#personalized(s, resolved.value);
+      if (s.closed) return;
       if (ctx.note) this.deps.dashboard.emit({ type: "status", sessionId: s.sessionId, note: ctx.note });
       if (s.card && s.card.companyId === ctx.companyId) {
         // Same company again — suppressed (the COOLDOWN_MIN cooldown owns this).

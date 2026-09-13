@@ -142,6 +142,7 @@ function harness(opts: { profile?: ProfileSummary | null; context?: ContextProvi
   const pitch: PitchServiceApi = { pitchPage };
   const scan: ScanServiceApi = { extract };
 
+  const getUserCard = vi.fn<(userId: string, companyId: string) => Promise<SummaryCardContent | null>>(async () => null);
   const orch = new SessionOrchestrator({
     gate,
     identifier,
@@ -149,11 +150,12 @@ function harness(opts: { profile?: ProfileSummary | null; context?: ContextProvi
     pitch,
     scan,
     getProfile: async () => (opts.profile === undefined ? PROFILE : opts.profile),
+    getUserCard,
     dashboard: { emit: (e) => dashboardEvents.push(e) },
     logger: silentLogger,
   });
 
-  return { orch, channel, gate, dashboardEvents, identify, resolve, byId, pitchPage, extract };
+  return { orch, channel, gate, dashboardEvents, identify, resolve, byId, pitchPage, extract, getUserCard };
 }
 
 function banner(orgHint: string | null = "Stripe"): StableDetection {
@@ -364,6 +366,27 @@ describe("SessionOrchestrator", () => {
     finish(companyContext("ramp"));
     await vi.advanceTimersByTimeAsync(0);
     expect(h.channel.cards().at(-1)).toMatchObject({ kind: "company", title: "ramp" });
+  });
+
+  it("the user's own brief replaces page 1 for their session and feeds the pitch", async () => {
+    const h = harness();
+    const sessionId = await arm(h);
+    const mine: SummaryCardContent = { title: "Stripe (my notes)", subtitle: "Talk to Priya", lines: ["Ask about the intern return offer.", "Mention the billing project.", "Booth 12."] };
+    h.getUserCard.mockResolvedValueOnce(mine);
+    h.orch.onDetection(sessionId, banner());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.getUserCard).toHaveBeenCalledWith("u_1", "stripe");
+    expect(h.channel.cards().at(-1)).toMatchObject({ kind: "company", title: "Stripe (my notes)", lines: mine.lines });
+    expect(h.pitchPage).toHaveBeenCalledWith(PROFILE, expect.objectContaining({ card: mine }));
+  });
+
+  it("a slow user-card lookup never delays the shared card", async () => {
+    const h = harness();
+    const sessionId = await arm(h);
+    h.getUserCard.mockReturnValueOnce(new Promise(() => undefined));
+    h.orch.onDetection(sessionId, banner());
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(h.channel.cards().at(-1)).toMatchObject({ kind: "company", title: "stripe" });
   });
 
   it("unsure with no name anywhere: hint + backoff, nothing to research", async () => {
