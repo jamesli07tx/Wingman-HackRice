@@ -36,6 +36,19 @@ struct FairView: View {
     return q.isEmpty ? bridge.myCompanies : bridge.myCompanies.filter { $0.name.localizedCaseInsensitiveContains(q) }
   }
 
+  /// Brief completeness: green = title, subtitle and all 5 bullets; yellow = a card with gaps; red = no card.
+  private func fillColor(_ card: BriefCard?) -> Color {
+    guard let card else { return Theme.danger }
+    return isComplete(card) ? Theme.ok : Theme.warn
+  }
+  private func fillLabel(_ card: BriefCard?) -> String {
+    guard let card else { return "empty" }
+    return isComplete(card) ? "complete" : "\(card.lines.filter { !$0.isEmpty }.count)/5 bullets"
+  }
+  private func isComplete(_ card: BriefCard) -> Bool {
+    !card.title.isEmpty && !card.subtitle.isEmpty && card.lines.filter { !$0.isEmpty }.count >= 5
+  }
+
   private var briefsCard: some View {
     Card(title: "Your briefs", symbol: "square.and.pencil") {
       Text("Tap a company to rewrite what YOUR glasses show for it. Only you see your version; everyone else keeps the shared brief.")
@@ -50,13 +63,16 @@ struct FairView: View {
       ForEach(filtered.prefix(60)) { c in
         Button { editing = BriefTarget(company: c) } label: {
           HStack(spacing: 8) {
-            Circle().fill(c.custom ? Theme.accent : (c.card == nil ? Theme.warn : Theme.muted)).frame(width: 8, height: 8)
+            Circle().fill(fillColor(c.card)).frame(width: 8, height: 8)
             Text(c.name).font(.footnote).foregroundStyle(Theme.text).lineLimit(1)
             Spacer()
-            Text(c.custom ? "yours" : (c.card == nil ? "no brief yet" : "shared")).font(.caption2).foregroundStyle(Theme.muted)
+            Text("\(c.custom ? "yours" : "shared") · \(fillLabel(c.card))").font(.caption2).foregroundStyle(Theme.muted)
             Image(systemName: "chevron.right").font(.caption2).foregroundStyle(Theme.muted)
           }
         }
+      }
+      HStack(spacing: 12) {
+        legend(Theme.ok, "complete"); legend(Theme.warn, "partial"); legend(Theme.danger, "empty")
       }
       if bridge.myCompanies.isEmpty, bridge.accountReady {
         Text("No companies on file yet — import a fair list below.").font(.caption).foregroundStyle(Theme.muted)
@@ -132,6 +148,13 @@ struct FairView: View {
           Text(c.note ?? c.status).font(.caption2).foregroundStyle(Theme.muted).lineLimit(1)
         }
       }
+    }
+  }
+
+  private func legend(_ color: Color, _ text: String) -> some View {
+    HStack(spacing: 4) {
+      Circle().fill(color).frame(width: 7, height: 7)
+      Text(text).font(.caption2).foregroundStyle(Theme.muted)
     }
   }
 
