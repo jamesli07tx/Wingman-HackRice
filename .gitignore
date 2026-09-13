@@ -14,3 +14,4 @@ dist/
 coverage/
 *.log
 glassbridge/build/
+glassbridge/build-sim/
