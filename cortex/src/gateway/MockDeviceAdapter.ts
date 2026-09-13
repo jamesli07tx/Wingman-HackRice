@@ -49,6 +49,7 @@ export interface MockFixture {
 
 export class MockDeviceAdapter implements DeviceChannel {
   readonly deviceId: string;
+  readonly userId = "mock_user";
   readonly deviceType: DeviceType;
   /** Every CortexToDeviceMsg this fake device received, in order (test affordance). */
   readonly sent: CortexToDeviceMsg[] = [];

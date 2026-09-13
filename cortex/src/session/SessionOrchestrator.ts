@@ -70,7 +70,7 @@ export interface SessionOrchestratorDeps {
   pitch: PitchServiceApi;
   scan: ScanServiceApi;
   /** Single-user demo (D8): the cached ProfileSummary, pre-loaded at session start. */
-  getProfile: () => Promise<ProfileSummary | null>;
+  getProfile: (userId: string) => Promise<ProfileSummary | null>;
   dashboard: DashboardFeed;
   /** Injectable clock (tests). */
   now?: () => number;
@@ -330,13 +330,14 @@ export class SessionOrchestrator implements OrchestratorApi {
     this.#sessions.set(sessionId, session);
     this.#byDevice.set(channel.deviceId, session);
     this.deps.gate.reset(sessionId);
+    this.deps.dashboard.bindSession?.(sessionId, channel.userId);
     this.#sendArmed(session);
     this.deps.dashboard.emit({ type: "session", sessionId, state: "started" });
     this.#log.info("armed", { sessionId, deviceId: channel.deviceId, deviceType: channel.deviceType });
 
     // Profile is pre-loaded so the pitch stage never pays for it (DESIGN.md §3.2 F6).
     void this.deps
-      .getProfile()
+      .getProfile(channel.userId)
       .then((p) => {
         if (!session.closed) session.profile = p;
       })

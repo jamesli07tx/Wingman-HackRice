@@ -45,6 +45,7 @@ class FakeChannel implements DeviceChannel {
   constructor(
     readonly deviceId = "dev_1",
     readonly deviceType: DeviceType = "phone_web",
+    readonly userId = "u_1",
   ) {}
   send(msg: CortexToDeviceMsg): void {
     this.sent.push(msg);

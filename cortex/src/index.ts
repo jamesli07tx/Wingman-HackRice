@@ -125,16 +125,9 @@ async function wireFullStack(): Promise<void> {
   const scan = new ScanService();
   const profiles = new ProfileService(supabase);
 
-  // Single-user demo (D8): the profile is whichever row has a parsed summary.
-  const getProfile = async (): Promise<ProfileSummary | null> => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("summary")
-      .not("summary", "is", null)
-      .limit(1)
-      .maybeSingle();
-    return (data?.summary as ProfileSummary | null) ?? null;
-  };
+  // Per user: the session's pitch is written from the resume of whoever linked the glasses.
+  const getProfile = async (userId: string): Promise<ProfileSummary | null> =>
+    (await profiles.getProfile(userId)).profile;
 
   // SceneGate needs the orchestrator's detection handler; orchestrator needs the
   // gate. Break the cycle with a late-bound forwarder.

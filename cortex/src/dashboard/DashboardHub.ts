@@ -44,7 +44,8 @@ export interface DashboardHubDeps {
 
 export class DashboardHub implements DashboardFeed {
   readonly #wss = new WebSocketServer({ noServer: true });
-  readonly #clients = new Set<WebSocket>();
+  readonly #clients = new Map<WebSocket, string>(); // ws -> userId
+  readonly #owners = new Map<string, string>();     // sessionId -> userId
   readonly #backlog: DashboardEvent[] = [];
   readonly #log: DashboardLogger;
   readonly #backlogSize: number;
@@ -78,14 +79,29 @@ export class DashboardHub implements DashboardFeed {
     return true;
   }
 
-  /** DashboardFeed — fan out one event to every connected dashboard. */
+  bindSession(sessionId: string, userId: string): void {
+    this.#owners.set(sessionId, userId);
+    if (this.#owners.size > 1000) this.#owners.delete(this.#owners.keys().next().value as string);
+  }
+
+  /** An event reaches a dashboard only if its session belongs to that user. Events with no session
+   *  (or one this process never bound, e.g. after a restart) stay visible to everyone. */
+  #visible(event: DashboardEvent, userId: string): boolean {
+    const sid = (event as { sessionId?: string }).sessionId;
+    if (!sid) return true;
+    const owner = this.#owners.get(sid);
+    return owner === undefined || owner === userId;
+  }
+
+  /** DashboardFeed — fan out one event to every connected dashboard of the session's user. */
   emit(event: DashboardEvent): void {
     this.#backlog.push(event);
     if (this.#backlog.length > this.#backlogSize) this.#backlog.shift();
     if (this.#clients.size === 0) return;
     const payload = JSON.stringify(event);
-    for (const ws of this.#clients) {
+    for (const [ws, userId] of this.#clients) {
       if (ws.readyState !== 1 /* OPEN */) continue;
+      if (!this.#visible(event, userId)) continue;
       try {
         ws.send(payload);
       } catch (err) {
@@ -99,7 +115,7 @@ export class DashboardHub implements DashboardFeed {
   }
 
   close(): void {
-    for (const ws of this.#clients) {
+    for (const ws of this.#clients.keys()) {
       try {
         ws.close(1000, "cortex_close");
       } catch {
@@ -120,9 +136,10 @@ export class DashboardHub implements DashboardFeed {
   }
 
   #onConnection(ws: WebSocket, userId: string): void {
-    this.#clients.add(ws);
+    this.#clients.set(ws, userId);
     this.#log.info("dashboard connected", { userId, clients: this.#clients.size });
     for (const event of this.#backlog) {
+      if (!this.#visible(event, userId)) continue;
       try {
         ws.send(JSON.stringify(event));
       } catch {

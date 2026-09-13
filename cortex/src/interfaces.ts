@@ -27,6 +27,8 @@ import type {
 /** One connected device socket, abstracted so MockDeviceAdapter can stand in. */
 export interface DeviceChannel {
   readonly deviceId: string;
+  /** Clerk user who linked this device — the session's profile and dashboard feed are scoped to them. */
+  readonly userId: string;
   readonly deviceType: DeviceType;
   send(msg: CortexToDeviceMsg): void;
   close(): void;
@@ -156,4 +158,6 @@ export interface OrchestratorApi extends GatewayEvents {
 
 export interface DashboardFeed {
   emit(event: DashboardEvent): void;
+  /** Optional: tell the feed which user owns a session so its events reach only that user's dashboards. */
+  bindSession?(sessionId: string, userId: string): void;
 }
