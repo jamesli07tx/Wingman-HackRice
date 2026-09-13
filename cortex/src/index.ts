@@ -24,6 +24,7 @@ import { gateModel } from "./llm/anthropic.js";
 import { createClerkVerifier, restRoutes } from "./rest/routes.js";
 import { SceneGate } from "./gate/SceneGate.js";
 import { IdentifyService, type IdentifyCorpusEntry } from "./identify/IdentifyService.js";
+import { createFairImportService, fairRoutes } from "./fairs/index.js";
 import { ContextService, makeOpusSummarizer } from "./context/ContextService.js";
 import { PitchService } from "./pitch/PitchService.js";
 import { ScanService } from "./scan/ScanService.js";
@@ -175,6 +176,25 @@ async function wireFullStack(): Promise<void> {
   });
 
   await app.register(restRoutes({ supabase, profiles, context, orchestrator, verifyToken }));
+
+  // Fair list import (cortex/src/fairs/, isolated): link or image -> pre-carded
+  // companies rows -> identify list rebuilt right away through the same swappable
+  // identifier the 5-min refresh uses. ContextService and its live Tavily path are
+  // untouched — anything not on a list is still researched live.
+  const fairs = createFairImportService({
+    supabase,
+    tavilyApiKey: process.env.TAVILY_API_KEY,
+    logger: log,
+    reloadCorpus: async () => {
+      const fresh = await loadCorpus();
+      if (!fresh) throw new Error("corpus reload failed (Supabase unavailable)");
+      corpus = fresh;
+      identifierImpl = new IdentifyService(corpus);
+      app.log.info({ companies: corpus.length }, "identify corpus reloaded after fair import");
+      return corpus.length;
+    },
+  });
+  await app.register(fairRoutes({ service: fairs, verifyToken }));
 
   if (process.env.MOCK_DEVICE === "1") {
     // INTEGRATION: fixture E2E — the whole pipeline with zero hardware.
