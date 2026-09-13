@@ -288,7 +288,7 @@ final class BridgeController: ObservableObject {
       else if let fromProfile = envelope.profile?.links { links = fromProfile }
       profileStatus = nil
     } catch {
-      profileStatus = error.localizedDescription
+      if !isCancellation(error) { profileStatus = error.localizedDescription }
     }
   }
 
@@ -350,10 +350,22 @@ final class BridgeController: ObservableObject {
   /// Pull-to-refresh: every server-backed list, in parallel. Session state is live over the socket already.
   func refreshAll() async {
     guard accountReady else { return }
-    async let p: () = refreshProfile()
-    async let c: () = loadMyCompanies()
-    async let f: () = refreshFairImport()
-    _ = await (p, c, f)
+    // Unstructured on purpose: SwiftUI cancels the `.refreshable` task as soon as a published change re-renders the
+    // ScrollView, which aborted the remaining requests with "cancelled". A child Task does not inherit that.
+    let work = Task { @MainActor in
+      async let p: () = self.refreshProfile()
+      async let c: () = self.loadMyCompanies()
+      async let f: () = self.refreshFairImport()
+      _ = await (p, c, f)
+    }
+    await work.value
+  }
+
+  /// A cancelled request is not an error worth a red banner.
+  private func isCancellation(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    if case let CortexError.transport(inner) = error, (inner as? URLError)?.code == .cancelled { return true }
+    return (error as? URLError)?.code == .cancelled
   }
 
   // MARK: my company briefs (per user; the shared corpus is never edited from the app)
@@ -364,7 +376,7 @@ final class BridgeController: ObservableObject {
 
   func loadMyCompanies() async {
     guard accountReady else { return }
-    do { myCompanies = try await cortex.myCompanies() } catch { briefStatus = error.localizedDescription }
+    do { myCompanies = try await cortex.myCompanies() } catch { if !isCancellation(error) { briefStatus = error.localizedDescription } }
   }
 
   /// Returns true on success so the editor can dismiss.
