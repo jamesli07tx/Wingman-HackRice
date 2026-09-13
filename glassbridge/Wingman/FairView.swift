@@ -21,15 +21,12 @@ struct FairView: View {
   @State private var browsing = false
 
   var body: some View {
-    NavigationStack {
-      VStack(spacing: 16) {
-        briefsCard
-        importCard
-        if let imp = bridge.fairImport { resultCard(imp) }
-      }
-      .navigationDestination(isPresented: $browsing) { BriefsListView(editing: $editing) }
-      .toolbar(.hidden, for: .navigationBar)
+    VStack(spacing: 16) {
+      briefsCard
+      importCard
+      if let imp = bridge.fairImport { resultCard(imp) }
     }
+    .navigationDestination(isPresented: $browsing) { BriefsListView(editing: $editing) }   // stack lives in RootView.tab
     .task { await bridge.refreshFairImport(); await bridge.loadMyCompanies() }
     .sheet(item: $editing) { target in BriefEditor(target: target).environmentObject(bridge) }
   }

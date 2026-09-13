@@ -49,11 +49,16 @@ struct RootView: View {
     .task { await bridge.refreshProfile() }
   }
 
+  /// Each tab gets its own NavigationStack (bar hidden — the top bar above is the chrome) so a screen can push
+  /// an inner page, e.g. Companies → Your briefs. A stack INSIDE the ScrollView would collapse to zero height.
   private func tab<V: View>(_ view: V, _ title: String, _ symbol: String) -> some View {
-    ZStack {
-      Theme.bg.ignoresSafeArea()
-      ScrollView { view.padding() }
-        .refreshable { await bridge.refreshAll() }   // pull down on any tab: re-read everything from Cortex
+    NavigationStack {
+      ZStack {
+        Theme.bg.ignoresSafeArea()
+        ScrollView { view.padding() }
+          .refreshable { await bridge.refreshAll() }   // pull down on any tab: re-read everything from Cortex
+      }
+      .toolbar(.hidden, for: .navigationBar)
     }
     .tabItem { Label(title, systemImage: symbol) }
   }
